@@ -2,28 +2,25 @@ const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const { tokenGenerator } = require("../utils/tokenGenerator");
 const { generateOTP, storeOTP, verifyOTP, resendOTP } = require("../services/otpService");
-const { sendVerificationEmail } = require("../services/emailService");
+const { sendVerificationEmail, sendPasswordResetEmail } = require("../services/emailService");
 
 const accessTokenCookieOptions = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production", // ✅ secure in prod, open in dev
+  secure: process.env.NODE_ENV === "production",
   sameSite: "lax",
   maxAge: 15 * 60 * 1000,
 };
 
 const refreshTokenCookieOptions = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production", // ✅ secure in prod, open in dev
+  secure: process.env.NODE_ENV === "production",
   sameSite: "lax",
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
-// ─────────────────────────────────────────────
-// REGISTER
-// ─────────────────────────────────────────────
+// ==================== REGISTER ====================
 const register = async (req, res) => {
   try {
-    // ✅ role removed from destructure — all registrations are "user"
     const { name, email, password, phone, gender } = req.body;
 
     const existingUser = await User.findOne({ email });
@@ -40,7 +37,7 @@ const register = async (req, res) => {
       password: hashedPassword,
       phone,
       gender,
-      role: "user", // ✅ always "user" on registration
+      role: "user",
       isEmailVerified: false,
     });
 
@@ -61,9 +58,7 @@ const register = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// VERIFY EMAIL
-// ─────────────────────────────────────────────
+// ==================== VERIFY EMAIL ====================
 const verifyEmail = async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -85,10 +80,7 @@ const verifyEmail = async (req, res) => {
     user.isEmailVerified = true;
     await user.save();
 
-    const { AccessToken, RefreshToken } = tokenGenerator(
-      user._id.toString(),
-      user.role
-    );
+    const { AccessToken, RefreshToken } = tokenGenerator(user._id.toString(), user.role);
 
     res
       .cookie("accessToken", AccessToken, accessTokenCookieOptions)
@@ -110,9 +102,7 @@ const verifyEmail = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// RESEND OTP
-// ─────────────────────────────────────────────
+// ==================== RESEND OTP ====================
 const resendVerificationOTP = async (req, res) => {
   try {
     const { email } = req.body;
@@ -139,12 +129,9 @@ const resendVerificationOTP = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// LOGIN
-// ─────────────────────────────────────────────
+// ==================== LOGIN ====================
 const login = async (req, res) => {
   try {
-    // ✅ selectedRole removed — no role switching with 2 roles
     const { email, password } = req.body;
 
     const user = await User.findOne({ email });
@@ -165,10 +152,7 @@ const login = async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    const { AccessToken, RefreshToken } = tokenGenerator(
-      user._id.toString(),
-      user.role
-    );
+    const { AccessToken, RefreshToken } = tokenGenerator(user._id.toString(), user.role);
 
     res
       .cookie("accessToken", AccessToken, accessTokenCookieOptions)
@@ -189,9 +173,7 @@ const login = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// FORGOT PASSWORD
-// ─────────────────────────────────────────────
+// ==================== FORGOT PASSWORD ====================
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -207,7 +189,7 @@ const forgotPassword = async (req, res) => {
 
     const otp = generateOTP();
     await storeOTP(email, otp);
-    await sendVerificationEmail(email, otp, user.name); // ✅ reuse email service instead of console.log
+    await sendPasswordResetEmail(email, otp, user.name);
 
     res.status(200).json({
       success: true,
@@ -219,9 +201,7 @@ const forgotPassword = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// VERIFY FORGOT OTP
-// ─────────────────────────────────────────────
+// ==================== VERIFY FORGOT OTP ====================
 const verifyForgotOtp = async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -256,9 +236,7 @@ const verifyForgotOtp = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// RESET PASSWORD
-// ─────────────────────────────────────────────
+// ==================== RESET PASSWORD ====================
 const resetPassword = async (req, res) => {
   try {
     const { email, newPassword } = req.body;
@@ -302,9 +280,7 @@ const resetPassword = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// LOGOUT
-// ─────────────────────────────────────────────
+// ==================== LOGOUT ====================
 const logout = (req, res) => {
   res
     .clearCookie("accessToken", accessTokenCookieOptions)
@@ -312,9 +288,7 @@ const logout = (req, res) => {
     .json({ success: true, message: "Logged out successfully" });
 };
 
-// ─────────────────────────────────────────────
-// GET CURRENT USER
-// ─────────────────────────────────────────────
+// ==================== GET CURRENT USER ====================
 const getCurrentUser = async (req, res) => {
   try {
     const userId = req.user?.userId;
@@ -335,9 +309,7 @@ const getCurrentUser = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// ADMIN — GET ALL USERS
-// ─────────────────────────────────────────────
+// ==================== ADMIN — GET ALL USERS ====================
 const getUsers = async (req, res) => {
   try {
     const users = await User.find({}).select("-password");
@@ -352,9 +324,7 @@ const getUsers = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// ADMIN — GET USER BY ID
-// ─────────────────────────────────────────────
+// ==================== ADMIN — GET USER BY ID ====================
 const getUserById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -371,9 +341,7 @@ const getUserById = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// UPDATE USER
-// ─────────────────────────────────────────────
+// ==================== UPDATE USER ====================
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
@@ -396,9 +364,7 @@ const updateUser = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────
-// ADMIN — DELETE USER
-// ─────────────────────────────────────────────
+// ==================== ADMIN — DELETE USER ====================
 const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;

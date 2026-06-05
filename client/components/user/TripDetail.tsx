@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import {
   ArrowLeft, Star, ShieldCheck, MapPin, Clock, Calendar,
   Users, CheckCircle2, Zap, CreditCard, RefreshCcw,
@@ -9,73 +10,19 @@ import {
   Car, Fuel, MessageCircle, Phone
 } from 'lucide-react'
 
-// ─── Map Preview ──────────────────────────────────────────────────────────────
-function RouteMap() {
-  return (
-    <div className="relative rounded-xl overflow-hidden h-64 bg-gradient-to-br from-blue-50 via-indigo-50 to-slate-100 border border-gray-200">
-      {/* Grid */}
-      {[...Array(8)].map((_, i) => (
-        <div key={i} className="absolute border-gray-200/60 border-t w-full" style={{ top: `${i * 14}%` }} />
-      ))}
-      {[...Array(8)].map((_, i) => (
-        <div key={i} className="absolute border-gray-200/60 border-l h-full" style={{ left: `${i * 14}%` }} />
-      ))}
-
-      <svg className="absolute inset-0 w-full h-full" viewBox="0 0 400 256" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="rg" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#2563eb" />
-            <stop offset="100%" stopColor="#7c3aed" />
-          </linearGradient>
-          <filter id="glow">
-            <feGaussianBlur stdDeviation="3" result="coloredBlur" />
-            <feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-        </defs>
-        {/* Shadow path */}
-        <path d="M 50 200 Q 150 130 220 140 Q 310 150 360 55"
-          stroke="#2563eb" strokeWidth="6" fill="none" opacity="0.12" strokeLinecap="round" />
-        {/* Main route */}
-        <path d="M 50 200 Q 150 130 220 140 Q 310 150 360 55"
-          stroke="url(#rg)" strokeWidth="3" fill="none"
-          strokeDasharray="8 4" strokeLinecap="round" filter="url(#glow)" />
-        {/* Start */}
-        <circle cx="50" cy="200" r="7" fill="#16a34a" filter="url(#glow)" />
-        <circle cx="50" cy="200" r="14" fill="#16a34a" fillOpacity="0.15" />
-        {/* Pickup */}
-        <circle cx="200" cy="142" r="6" fill="#f59e0b" filter="url(#glow)" />
-        <circle cx="200" cy="142" r="12" fill="#f59e0b" fillOpacity="0.15" />
-        {/* End */}
-        <circle cx="360" cy="55" r="7" fill="#dc2626" filter="url(#glow)" />
-        <circle cx="360" cy="55" r="14" fill="#dc2626" fillOpacity="0.15" />
-      </svg>
-
-      {/* Labels */}
-      <div className="absolute bottom-10 left-6 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-lg px-2.5 py-1.5 shadow-sm">
-        <p className="text-xs font-semibold text-gray-700 flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-green-500" /> Kozhikode
-        </p>
-      </div>
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/90 backdrop-blur-sm border border-amber-200 rounded-lg px-2.5 py-1.5 shadow-sm">
-        <p className="text-xs font-semibold text-amber-700 flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-amber-400" /> AI Pickup
-        </p>
-      </div>
-      <div className="absolute top-4 right-6 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-lg px-2.5 py-1.5 shadow-sm">
-        <p className="text-xs font-semibold text-gray-700 flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-red-500" /> Bangalore
-        </p>
-      </div>
-
-      {/* Distance chip */}
-      <div className="absolute bottom-3 right-3 bg-blue-600 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow">
-        528 km · ~8 hrs
+// ✅ Leaflet must be client-only — never SSR
+const TripDetailMap = dynamic(() => import('@/components/maps/TripDetailMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-64 rounded-xl bg-gray-100 border border-gray-200 flex items-center justify-center">
+      <div className="flex flex-col items-center gap-2 text-gray-400">
+        <div className="w-5 h-5 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
+        <span className="text-xs font-medium">Loading map...</span>
       </div>
     </div>
-  )
-}
+  ),
+})
 
-// ─── Star Rating ──────────────────────────────────────────────────────────────
 function Stars({ rating }: { rating: number }) {
   return (
     <span className="flex items-center gap-0.5">
@@ -87,11 +34,19 @@ function Stars({ rating }: { rating: number }) {
   )
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
 export default function TripDetailsPage() {
-  const [saved, setSaved] = useState(false)
+  const [saved,   setSaved]   = useState(false)
   const [booking, setBooking] = useState(false)
-  const [booked, setBooked] = useState(false)
+  const [booked,  setBooked]  = useState(false)
+
+  // Trip data — in real app these come from your API / route params
+  const trip = {
+    from:     'Kozhikode',
+    to:       'Bangalore',
+    pickup:   'Calicut University Main Gate, Kozhikode',
+    distance: 528,
+    eta:      8,
+  }
 
   const handleBook = () => {
     setBooking(true)
@@ -101,7 +56,7 @@ export default function TripDetailsPage() {
   return (
     <div className="max-w-5xl mx-auto space-y-5 pb-10">
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <Link href="/search" className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition">
           <ArrowLeft size={16} /> Trip Details
@@ -118,10 +73,10 @@ export default function TripDetailsPage() {
         </div>
       </div>
 
-      {/* ── Two column layout ── */}
+      {/* Two column layout */}
       <div className="grid grid-cols-[1fr_320px] gap-6 items-start">
 
-        {/* ── LEFT ── */}
+        {/* LEFT */}
         <div className="space-y-4">
 
           {/* Driver card */}
@@ -172,10 +127,10 @@ export default function TripDetailsPage() {
             <h2 className="font-semibold text-gray-900 mb-4">Trip Information</h2>
             <div className="grid grid-cols-4 gap-4">
               {[
-                { icon: Calendar, label: 'DATE', value: 'May 15, 2026' },
-                { icon: Clock, label: 'TIME', value: '8:00 AM' },
-                { icon: Navigation, label: 'EST. DURATION', value: '~8 hours' },
-                { icon: Users, label: 'AVAILABILITY', value: '2 seats left', highlight: true },
+                { icon: Calendar,   label: 'DATE',         value: 'May 15, 2026' },
+                { icon: Clock,      label: 'TIME',         value: '8:00 AM' },
+                { icon: Navigation, label: 'EST. DURATION',value: `~${trip.eta} hours` },
+                { icon: Users,      label: 'AVAILABILITY', value: '2 seats left', highlight: true },
               ].map(({ icon: Icon, label, value, highlight }) => (
                 <div key={label} className={`rounded-lg p-3 ${highlight ? 'bg-amber-50 border border-amber-100' : 'bg-gray-50'}`}>
                   <div className="flex items-center gap-1.5 mb-1">
@@ -192,17 +147,12 @@ export default function TripDetailsPage() {
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
             <h2 className="font-semibold text-gray-900 mb-4">Route & Pickup</h2>
             <div className="relative pl-6">
-              {/* Timeline line */}
               <div className="absolute left-2 top-2 bottom-2 w-px bg-gray-200" />
-
-              {/* Stop: Kozhikode */}
               <div className="relative mb-5">
                 <span className="absolute -left-4 top-1 w-3 h-3 rounded-full bg-green-500 border-2 border-white shadow" />
-                <p className="font-semibold text-gray-900 text-sm">Kozhikode</p>
+                <p className="font-semibold text-gray-900 text-sm">{trip.from}</p>
                 <p className="text-xs text-gray-400 mt-0.5">Starting Point</p>
               </div>
-
-              {/* AI Pickup suggestion */}
               <div className="relative mb-5">
                 <span className="absolute -left-4 top-1 w-3 h-3 rounded-full bg-amber-400 border-2 border-white shadow" />
                 <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
@@ -210,16 +160,14 @@ export default function TripDetailsPage() {
                     <Zap size={12} className="text-blue-500" />
                     <span className="text-xs font-semibold text-blue-700">AI Suggested Pickup</span>
                   </div>
-                  <p className="text-sm font-medium text-gray-800">"Calicut University Main Gate"</p>
+                  <p className="text-sm font-medium text-gray-800">"{trip.pickup}"</p>
                   <p className="text-xs text-gray-400 mt-0.5">~3.4 km detour</p>
                 </div>
               </div>
-
-              {/* Stop: Bangalore */}
               <div className="relative">
                 <span className="absolute -left-4 top-1 w-3 h-3 rounded-full bg-red-500 border-2 border-white shadow" />
-                <p className="font-semibold text-gray-900 text-sm">Bangalore</p>
-                <p className="text-xs text-gray-400 mt-0.5">Destination (546 km, 528 km)</p>
+                <p className="font-semibold text-gray-900 text-sm">{trip.to}</p>
+                <p className="text-xs text-gray-400 mt-0.5">Destination ({trip.distance} km)</p>
               </div>
             </div>
           </div>
@@ -263,14 +211,8 @@ export default function TripDetailsPage() {
             </div>
             <div className="space-y-4">
               {[
-                {
-                  name: 'Priya Sharma', rating: 5, avatar: 'PS',
-                  text: 'Arjun was a fantastic driver. The car was spotless and he drove very safely through the ghat section. Highly recommend!',
-                },
-                {
-                  name: 'Rahul Menon', rating: 4, avatar: 'RM',
-                  text: 'Good trip overall. Reached Bangalore on time despite some traffic near Mysore.',
-                },
+                { name: 'Priya Sharma', rating: 5, avatar: 'PS', text: 'Arjun was a fantastic driver. The car was spotless and he drove very safely through the ghat section. Highly recommend!' },
+                { name: 'Rahul Menon',  rating: 4, avatar: 'RM', text: 'Good trip overall. Reached Bangalore on time despite some traffic near Mysore.' },
               ].map(({ name, rating, avatar, text }) => (
                 <div key={name} className="flex gap-3">
                   <div className="w-9 h-9 rounded-full bg-gray-100 text-gray-600 font-semibold text-xs flex items-center justify-center shrink-0">
@@ -289,18 +231,24 @@ export default function TripDetailsPage() {
           </div>
         </div>
 
-        {/* ── RIGHT ── */}
+        {/* RIGHT */}
         <div className="space-y-4 sticky top-[89px]">
-          {/* Map */}
-          <RouteMap />
+
+          {/* ✅ Real Leaflet map with from/to/pickup geocoding */}
+          <TripDetailMap
+            from={trip.from}
+            to={trip.to}
+            pickup={trip.pickup}
+            distanceKm={trip.distance}
+            etaHours={trip.eta}
+          />
 
           {/* Price Summary */}
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 space-y-3">
             <h2 className="font-semibold text-gray-900">Price Summary</h2>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between text-gray-600">
-                <span>1 Seat</span>
-                <span>₹650</span>
+                <span>1 Seat</span><span>₹650</span>
               </div>
               <div className="flex justify-between text-gray-600">
                 <span>Platform fee</span>
@@ -312,59 +260,37 @@ export default function TripDetailsPage() {
               </div>
             </div>
 
-            {/* Trust badges */}
-            <div className="bg-green-50 border border-green-100 rounded-lg p-3 space-y-2">
-              {[
-                { icon: CreditCard, text: 'Secured by Stripe Escrow', sub: 'Funds held safely until trip completes' },
-              ].map(({ icon: Icon, text, sub }) => (
-                <div key={text} className="flex items-start gap-2">
-                  <Icon size={14} className="text-green-600 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-xs font-semibold text-green-800">{text}</p>
-                    <p className="text-xs text-green-600">{sub}</p>
-                  </div>
+            <div className="bg-green-50 border border-green-100 rounded-lg p-3">
+              <div className="flex items-start gap-2">
+                <CreditCard size={14} className="text-green-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs font-semibold text-green-800">Secured by Stripe Escrow</p>
+                  <p className="text-xs text-green-600">Funds held safely until trip completes</p>
                 </div>
-              ))}
+              </div>
             </div>
 
             <div className="space-y-2 text-xs text-gray-500">
               {[
-                { icon: RefreshCcw, text: 'Free cancellation up to 24h before' },
+                { icon: RefreshCcw,  text: 'Free cancellation up to 24h before' },
                 { icon: ShieldCheck, text: 'ID verified participants only' },
-                { icon: Navigation, text: 'Real-time trip tracking available' },
+                { icon: Navigation,  text: 'Real-time trip tracking available' },
               ].map(({ icon: Icon, text }) => (
                 <div key={text} className="flex items-center gap-2">
-                  <Icon size={12} className="text-gray-400 shrink-0" />
-                  <span>{text}</span>
+                  <Icon size={12} className="text-gray-400 shrink-0" /><span>{text}</span>
                 </div>
               ))}
             </div>
 
-            {/* Book button */}
-            <button
-              onClick={handleBook}
-              disabled={booking || booked}
+            <button onClick={handleBook} disabled={booking || booked}
               className={`w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition ${
-                booked
-                  ? 'bg-green-600 text-white cursor-default'
-                  : booking
-                  ? 'bg-blue-400 text-white cursor-wait'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-200'
-              }`}
-            >
-              {booked ? (
-                <><CheckCircle2 size={16} /> Booking Confirmed!</>
-              ) : booking ? (
-                <>
-                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                  </svg>
-                  Confirming...
-                </>
-              ) : (
-                <>Book This Ride <ChevronRight size={16} /></>
-              )}
+                booked   ? 'bg-green-600 text-white cursor-default'
+                : booking ? 'bg-blue-400 text-white cursor-wait'
+                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-200'
+              }`}>
+              {booked ? <><CheckCircle2 size={16} /> Booking Confirmed!</>
+                : booking ? <><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>Confirming...</>
+                : <>Book This Ride <ChevronRight size={16} /></>}
             </button>
 
             <p className="text-center text-xs text-gray-400">
@@ -372,7 +298,6 @@ export default function TripDetailsPage() {
             </p>
           </div>
 
-          {/* Report */}
           <button className="w-full flex items-center justify-center gap-1.5 text-xs text-gray-400 hover:text-red-500 transition py-2">
             <AlertCircle size={12} /> Report this listing
           </button>
