@@ -1,10 +1,10 @@
+import ProtectedRoute from '@/components/ProtectedRoute'
 import MyTrips from '@/components/user/MyTrips'
 
-export const metadata = {
-  title: 'My Trips — RideSharePro',
-  description: 'Manage your hosted and booked trips',
-}
-
 export default function MyTripsPage() {
-  return <MyTrips />
+  return (
+    <ProtectedRoute>
+      <MyTrips />
+    </ProtectedRoute>
+  )
 }

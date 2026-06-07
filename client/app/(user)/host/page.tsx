@@ -1,9 +1,10 @@
+import ProtectedRoute from '@/components/ProtectedRoute'
 import HostTrip from '@/components/user/HostTrip'
 
-export const metadata = {
-  title: 'Host a Ride — RideSharePro',
-}
-
-export default function HostTripPage() {
-  return <HostTrip />
+export default function HostPage() {
+  return (
+    <ProtectedRoute>
+      <HostTrip />
+    </ProtectedRoute>
+  )
 }

@@ -1,8 +1,8 @@
 const jwt = require("jsonwebtoken");
 
-// ✅ Core auth middleware — verifies token, attaches user to req
 const authMiddleware = (req, res, next) => {
   try {
+    // Check cookies first, then Authorization header
     const token =
       req.cookies?.accessToken ||
       req.headers.authorization?.split(" ")[1];
@@ -25,12 +25,16 @@ const authMiddleware = (req, res, next) => {
 
     next();
   } catch (error) {
+    if (error.name === 'TokenExpiredError') {
+      return res.status(403).json({ message: "Token expired" });
+    }
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(403).json({ message: "Invalid token" });
+    }
     return res.status(403).json({ message: "Invalid or expired access token" });
   }
 };
 
-// ✅ Admin-only guard — use after authMiddleware on protected routes
-// e.g. router.get('/admin/users', authMiddleware, adminOnly, getUsers)
 const adminOnly = (req, res, next) => {
   if (req.user?.role !== "admin") {
     return res.status(403).json({ message: "Admin access required" });

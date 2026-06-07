@@ -91,8 +91,12 @@ export default function TripDetailMap({ from, to, pickup, distanceKm, etaHours }
       setMapReady(true)
     })
     return () => {
-      if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; setMapReady(false) }
       if (animRef.current) clearInterval(animRef.current)
+      if (mapRef.current) { 
+        mapRef.current.remove(); 
+        mapRef.current = null; 
+        setMapReady(false) 
+      }
     }
   }, [])
 
@@ -108,13 +112,26 @@ export default function TripDetailMap({ from, to, pickup, distanceKm, etaHours }
     if (!from || !to) return
 
     const L = leafletRef.current
-    routeRef.current?.remove()
-    pulseRef.current?.remove()
-    markersRef.current.forEach(m => m.remove())
+    const currentMap = mapRef.current
+
+    // Clean up existing layers safely
+    if (routeRef.current) {
+      try { routeRef.current.remove() } catch(e) {}
+      routeRef.current = null
+    }
+    if (pulseRef.current) {
+      try { pulseRef.current.remove() } catch(e) {}
+      pulseRef.current = null
+    }
+    markersRef.current.forEach(m => {
+      try { m.remove() } catch(e) {}
+    })
     markersRef.current = []
     if (animRef.current) clearInterval(animRef.current)
 
     const run = async () => {
+      if (!currentMap) return
+      
       const queries = [geocode(from), geocode(to)]
       if (pickup) queries.push(geocode(pickup))
       const results = await Promise.all(queries)
@@ -134,11 +151,15 @@ export default function TripDetailMap({ from, to, pickup, distanceKm, etaHours }
         ? [startC, pickC, endC]
         : [startC, endC]
 
+      // Add layers only if map still exists
+      if (!currentMap) return
+
       // Dashed background glow line
-      L.polyline(pathPoints, {
+      const glowLine = L.polyline(pathPoints, {
         color: '#2563eb', weight: 10, opacity: 0.08,
         lineCap: 'round', lineJoin: 'round',
-      }).addTo(mapRef.current)
+      })
+      if (currentMap) glowLine.addTo(currentMap)
 
       // Main route line
       routeRef.current = L.polyline(pathPoints, {
@@ -146,13 +167,16 @@ export default function TripDetailMap({ from, to, pickup, distanceKm, etaHours }
         dashArray: '10 5', dashOffset: '0',
         lineCap: 'round', lineJoin: 'round',
         opacity: 0.9,
-      }).addTo(mapRef.current)
+      })
+      if (currentMap) routeRef.current.addTo(currentMap)
 
       // Animate dash offset for "moving route" effect
       let offset = 0
       animRef.current = setInterval(() => {
         offset = (offset + 1) % 15
-        routeRef.current?.setStyle({ dashOffset: String(-offset) })
+        if (routeRef.current) {
+          try { routeRef.current.setStyle({ dashOffset: String(-offset) }) } catch(e) {}
+        }
         setAnimProgress(p => (p + 0.5) % 100)
       }, 80)
 
@@ -204,27 +228,30 @@ export default function TripDetailMap({ from, to, pickup, distanceKm, etaHours }
           iconAnchor: [14, 14],
         })
 
-      markersRef.current.push(
-        L.marker(startC, { icon: makePin('#16a34a', from.split(',')[0].substring(0,12), '🟢') })
+      if (currentMap) {
+        const startMarker = L.marker(startC, { icon: makePin('#16a34a', from.split(',')[0].substring(0,12), '🟢') })
           .bindPopup(`<b>🟢 Start</b><br>${from}`, { closeButton: false })
-          .addTo(mapRef.current),
+        startMarker.addTo(currentMap)
+        markersRef.current.push(startMarker)
 
-        L.marker(endC, { icon: makePin('#dc2626', to.split(',')[0].substring(0,12), '🏁') })
+        const endMarker = L.marker(endC, { icon: makePin('#dc2626', to.split(',')[0].substring(0,12), '🏁') })
           .bindPopup(`<b>🏁 Destination</b><br>${to}`, { closeButton: false })
-          .addTo(mapRef.current),
-      )
+        endMarker.addTo(currentMap)
+        markersRef.current.push(endMarker)
+      }
 
-      if (pickC) {
-        markersRef.current.push(
-          L.marker(pickC, { icon: pulsingIcon('#f59e0b') })
-            .bindPopup(`<b>⚡ AI Pickup</b><br>${pickup}`, { closeButton: false })
-            .addTo(mapRef.current)
-        )
+      if (pickC && currentMap) {
+        const pickupMarker = L.marker(pickC, { icon: pulsingIcon('#f59e0b') })
+          .bindPopup(`<b>⚡ AI Pickup</b><br>${pickup}`, { closeButton: false })
+        pickupMarker.addTo(currentMap)
+        markersRef.current.push(pickupMarker)
       }
 
       // Fit bounds with padding
-      const allPoints = [startC, endC, ...(pickC ? [pickC] : [])]
-      mapRef.current.fitBounds(L.latLngBounds(allPoints), { padding: [50, 50] })
+      if (currentMap) {
+        const allPoints = [startC, endC, ...(pickC ? [pickC] : [])]
+        currentMap.fitBounds(L.latLngBounds(allPoints), { padding: [50, 50] })
+      }
     }
 
     run()
@@ -243,7 +270,7 @@ export default function TripDetailMap({ from, to, pickup, distanceKm, etaHours }
   const handleRecenter = async () => {
     if (!mapRef.current || !leafletRef.current) return
     const [s, e] = await Promise.all([geocode(from), geocode(to)])
-    if (s && e) {
+    if (s && e && mapRef.current) {
       mapRef.current.fitBounds(leafletRef.current.latLngBounds([s,e]), { padding:[50,50], animate:true })
       showToast('Map recentered to route.')
     }
@@ -257,16 +284,20 @@ export default function TripDetailMap({ from, to, pickup, distanceKm, etaHours }
       (pos) => {
         const c: [number,number] = [pos.coords.latitude, pos.coords.longitude]
         setUserCoords(c)
-        mapRef.current?.flyTo(c, 14, { animate: true, duration: 1.5 })
+        if (mapRef.current) {
+          mapRef.current.flyTo(c, 14, { animate: true, duration: 1.5 })
+        }
         const L = leafletRef.current
         if (L && mapRef.current) {
-          L.marker(c, {
+          const locationMarker = L.marker(c, {
             icon: L.divIcon({
               className: '',
               html: `<div style="width:14px;height:14px;border-radius:50%;background:#3b82f6;border:3px solid white;box-shadow:0 0 0 4px #3b82f644"></div>`,
               iconSize: [14,14], iconAnchor: [7,7],
             })
-          }).bindPopup('<b>📍 You are here</b>', { closeButton: false }).addTo(mapRef.current)
+          }).bindPopup('<b>📍 You are here</b>', { closeButton: false })
+          locationMarker.addTo(mapRef.current)
+          markersRef.current.push(locationMarker)
         }
         showToast('Your location found.')
         setIsTracking(false)

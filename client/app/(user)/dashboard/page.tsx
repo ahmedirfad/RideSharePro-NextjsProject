@@ -1,9 +1,10 @@
+import ProtectedRoute from '@/components/ProtectedRoute'
 import Dashboard from '@/components/user/Dashboard'
 
-export const metadata = {
-  title: 'Dashboard — RideSharePro',
-}
-
-export default function DashboardPage() {
-  return <Dashboard />
+export default function Home() {
+  return (
+    <ProtectedRoute>
+      <Dashboard />
+    </ProtectedRoute>
+  )
 }

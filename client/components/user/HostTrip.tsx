@@ -1,11 +1,14 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
+import { useRouter } from 'next/navigation'
 import {
-  Minus, Plus, Fuel, TrendingUp, MapPin, CheckCircle2, ChevronRight,
+  Minus, Plus, Fuel, TrendingUp, MapPin, CheckCircle2, ChevronRight, Loader2, X, PlusCircle,
 } from 'lucide-react'
+import api from '@/lib/api'
+import { useAuthStore } from '@/store/authStore'
 
 // ✅ Leaflet must be loaded client-side only — Next.js SSR will break it otherwise
 const TripMap = dynamic(() => import('@/components/maps/TripMap'), {
@@ -20,9 +23,219 @@ const TripMap = dynamic(() => import('@/components/maps/TripMap'), {
   ),
 })
 
-function FareAnalysis({ price }: { price: number }) {
-  const low = 500, high = 800
+interface Suggestion {
+  display_name: string
+  lat: string
+  lon: string
+  type: string
+}
+
+interface Waypoint {
+  name: string
+  lat: number
+  lon: number
+  order: number
+  distanceFromStart: number
+}
+
+// ─── Search using Nominatim ──────────────────────────────────────────────
+async function searchLocations(query: string): Promise<Suggestion[]> {
+  if (!query.trim() || query.length < 2) return []
+
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ', India')}&format=json&limit=5&addressdetails=1`,
+      {
+        headers: {
+          'User-Agent': 'RideSharePro/1.0 (contact@ridesharepro.com)'
+        }
+      }
+    )
+
+    if (!res.ok) return []
+
+    const data = await res.json()
+
+    return data.map((item: any) => ({
+      display_name: item.display_name,
+      lat: item.lat,
+      lon: item.lon,
+      type: item.type
+    }))
+  } catch (error) {
+    console.error('Nominatim search error:', error)
+    return []
+  }
+}
+
+// ─── Haversine distance calculation ──────────────────────────────────────
+function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371 // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLon = (lon2 - lon1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
+// ─── Calculate suggested price based on distance (₹3.5 per km) ────────────
+function calculateSuggestedPrice(distanceKm: number): number {
+  // Base price: ₹3.5 per km, minimum ₹50, maximum ₹2000
+  const basePrice = distanceKm * 3.5
+  const minPrice = 50
+  const maxPrice = 2000
+  
+  let price = Math.round(basePrice / 10) * 10 // Round to nearest ₹10
+  
+  if (price < minPrice) price = minPrice
+  if (price > maxPrice) price = maxPrice
+  
+  return price
+}
+
+// ─── Autocomplete Input Component ────────────────────────────────────────────
+function LocationInput({
+  value,
+  onChange,
+  placeholder,
+  onLocationSelect,
+  icon,
+  disabled = false
+}: {
+  value: string
+  onChange: (val: string) => void
+  placeholder: string
+  onLocationSelect?: (lat: number, lon: number, name: string) => void
+  icon?: React.ReactNode
+  disabled?: boolean
+}) {
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const debounceRef = useRef<NodeJS.Timeout | null>(null)
+
+  useEffect(() => {
+    if (disabled) return
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+
+    if (value.length < 2) {
+      setSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+
+    setIsLoading(true)
+    debounceRef.current = setTimeout(async () => {
+      const results = await searchLocations(value)
+      setSuggestions(results)
+      setShowSuggestions(results.length > 0)
+      setIsLoading(false)
+    }, 300)
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [value, disabled])
+
+  const selectLocation = (suggestion: Suggestion) => {
+    const locationName = suggestion.display_name.split(',')[0]
+    onChange(locationName)
+    if (onLocationSelect) {
+      onLocationSelect(parseFloat(suggestion.lat), parseFloat(suggestion.lon), locationName)
+    }
+    setShowSuggestions(false)
+    setSuggestions([])
+  }
+
+  return (
+    <div className="relative flex-1">
+      <div className={`flex items-center gap-2 border rounded-lg px-3 py-2.5 focus-within:ring-2 focus-within:ring-blue-500 transition ${disabled ? 'bg-gray-100 border-gray-200' : 'border-gray-200'
+        }`}>
+        {icon}
+        <input
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+          disabled={disabled}
+          className={`flex-1 text-sm text-gray-900 outline-none placeholder-gray-400 bg-transparent ${disabled ? 'cursor-not-allowed' : ''
+            }`}
+        />
+        {isLoading && <Loader2 size={14} className="text-gray-400 animate-spin" />}
+      </div>
+
+      {!disabled && showSuggestions && suggestions.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          {suggestions.map((s, idx) => (
+            <button
+              key={idx}
+              onClick={() => selectLocation(s)}
+              className="w-full text-left px-3 py-2 hover:bg-gray-50 transition flex items-start gap-2 border-b border-gray-100 last:border-0"
+            >
+              <MapPin size={14} className="text-gray-400 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm text-gray-900">{s.display_name.split(',')[0]}</p>
+                <p className="text-xs text-gray-400">{s.display_name.split(',').slice(1, 3).join(',')}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Waypoint Item Component ────────────────────────────────────────────────
+function WaypointItem({ waypoint, index, onRemove, onUpdate }: {
+  waypoint: Waypoint
+  index: number
+  onRemove: () => void
+  onUpdate: (lat: number, lon: number, name: string) => void
+}) {
+  const [name, setName] = useState(waypoint.name)
+  const [lat, setLat] = useState(waypoint.lat)
+  const [lon, setLon] = useState(waypoint.lon)
+
+  const handleLocationSelect = (newLat: number, newLon: number, newName: string) => {
+    setLat(newLat)
+    setLon(newLon)
+    setName(newName)
+    onUpdate(newLat, newLon, newName)
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex flex-col items-center">
+        <div className="w-2 h-2 rounded-full bg-amber-400" />
+        {index > 0 && <div className="w-px h-6 bg-gray-300" />}
+      </div>
+      <div className="flex-1">
+        <LocationInput
+          value={name}
+          onChange={setName}
+          onLocationSelect={handleLocationSelect}
+          placeholder={`Stop ${index + 1}`}
+          icon={<MapPin size={14} className="text-amber-500" />}
+        />
+      </div>
+      <button
+        onClick={onRemove}
+        className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition"
+      >
+        <X size={14} />
+      </button>
+    </div>
+  )
+}
+
+function FareAnalysis({ price, distance }: { price: number; distance: number }) {
+  const low = Math.max(50, Math.round(distance * 2.5 / 10) * 10)
+  const high = Math.max(100, Math.round(distance * 4.5 / 10) * 10)
   const pct = Math.min(Math.max(((price - low) / (high - low)) * 100, 3), 95)
+  
+  const fuelCost = Math.round(distance * 8) // ₹8 per km approx
+  
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 space-y-4">
       <div className="flex items-center gap-2">
@@ -46,11 +259,11 @@ function FareAnalysis({ price }: { price: number }) {
       <div className="space-y-2 text-sm border-t border-gray-100 pt-3">
         <div className="flex justify-between text-gray-600">
           <span className="flex items-center gap-1.5"><Fuel size={14} className="text-gray-400" /> Fuel Cost Estimate</span>
-          <span className="font-semibold text-gray-900">₹2,400</span>
+          <span className="font-semibold text-gray-900">₹{fuelCost}</span>
         </div>
         <div className="flex justify-between text-gray-600">
           <span className="flex items-center gap-1.5"><TrendingUp size={14} className="text-gray-400" /> Current Demand</span>
-          <span className="font-semibold text-green-600">High ↑</span>
+          <span className="font-semibold text-green-600">Medium ↑</span>
         </div>
       </div>
     </div>
@@ -61,7 +274,7 @@ function ProTips() {
   const tips = [
     'Setting a competitive price increases your chances of filling all seats by 40%.',
     'Allowing a small detour (up to 5km) significantly broadens your potential passenger pool.',
-    'Confirm bookings quickly to maintain a high host rating.',
+    'Adding intermediate stops helps passengers find more flexible booking options.',
   ]
   return (
     <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 space-y-3">
@@ -82,22 +295,34 @@ function ProTips() {
 }
 
 export default function HostTrip() {
-  const [from,     setFrom]     = useState('')
-  const [to,       setTo]       = useState('')
-  const [date,     setDate]     = useState('')
-  const [time,     setTime]     = useState('')
-  const [seats,    setSeats]    = useState(3)
-  const [price,    setPrice]    = useState(650)
-  const [detour,   setDetour]   = useState(5)
-  const [womenOnly, setWomenOnly] = useState(false)
-  const [posting,  setPosting]  = useState(false)
-  const [posted,   setPosted]   = useState(false)
+  const router = useRouter()
+  const { user, isAuthenticated } = useAuthStore()
 
-  // Debounced values passed to map — only update after user stops typing
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [waypoints, setWaypoints] = useState<Waypoint[]>([])
+  const [date, setDate] = useState('')
+  const [time, setTime] = useState('')
+  const [seats, setSeats] = useState(3)
+  const [price, setPrice] = useState(0)  // Start with 0, will update when distance is calculated
+  const [detour, setDetour] = useState(5)
+  const [womenOnly, setWomenOnly] = useState(false)
+  const [posting, setPosting] = useState(false)
+  const [posted, setPosted] = useState(false)
+  const [error, setError] = useState('')
+  const [suggestedPrice, setSuggestedPrice] = useState(0)
+
+  // Store lat/lon for from and to locations
+  const [fromLat, setFromLat] = useState<number | null>(null)
+  const [fromLon, setFromLon] = useState<number | null>(null)
+  const [toLat, setToLat] = useState<number | null>(null)
+  const [toLon, setToLon] = useState<number | null>(null)
+
+  // Debounced values passed to map
   const [mapFrom, setMapFrom] = useState('')
-  const [mapTo,   setMapTo]   = useState('')
+  const [mapTo, setMapTo] = useState('')
   const fromTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const toTimerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const toTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleFromChange = (val: string) => {
     setFrom(val)
@@ -111,10 +336,223 @@ export default function HostTrip() {
     toTimerRef.current = setTimeout(() => setMapTo(val), 900)
   }
 
-  const handlePost = () => {
-    setPosting(true)
-    setTimeout(() => { setPosting(false); setPosted(true) }, 1800)
+  const handleFromLocationSelect = (lat: number, lon: number, name: string) => {
+    setFromLat(lat)
+    setFromLon(lon)
+    updateSuggestedPrice()
   }
+
+  const handleToLocationSelect = (lat: number, lon: number, name: string) => {
+    setToLat(lat)
+    setToLon(lon)
+    updateSuggestedPrice()
+  }
+
+  const updateSuggestedPrice = () => {
+    const totalDist = calculateTotalDistance()
+    if (totalDist > 0) {
+      const suggested = calculateSuggestedPrice(totalDist)
+      setSuggestedPrice(suggested)
+      setPrice(suggested)  // Auto-set price to suggested value
+    }
+  }
+
+  const addWaypoint = () => {
+    setWaypoints([...waypoints, {
+      name: '',
+      lat: 0,
+      lon: 0,
+      order: waypoints.length + 1,
+      distanceFromStart: 0
+    }])
+  }
+
+  const removeWaypoint = (index: number) => {
+    setWaypoints(waypoints.filter((_, i) => i !== index))
+    setTimeout(updateSuggestedPrice, 100)
+  }
+
+  const updateWaypoint = (index: number, lat: number, lon: number, name: string) => {
+    const updated = [...waypoints]
+    updated[index] = { ...updated[index], name, lat, lon }
+    setWaypoints(updated)
+    setTimeout(updateSuggestedPrice, 100)
+  }
+
+  const calculateTotalDistance = (): number => {
+    let total = 0
+    const allPoints = [
+      { lat: fromLat, lon: fromLon },
+      ...waypoints.map(w => ({ lat: w.lat, lon: w.lon })),
+      { lat: toLat, lon: toLon }
+    ]
+
+    for (let i = 0; i < allPoints.length - 1; i++) {
+      if (allPoints[i].lat && allPoints[i + 1].lat) {
+        total += haversineDistance(
+          allPoints[i].lat!, allPoints[i].lon!,
+          allPoints[i + 1].lat!, allPoints[i + 1].lon!
+        )
+      }
+    }
+    return total
+  }
+
+  // Update suggested price when distance changes
+  useEffect(() => {
+    updateSuggestedPrice()
+  }, [fromLat, fromLon, toLat, toLon, waypoints])
+
+  const buildWaypointsArray = () => {
+    const allWaypoints = []
+    let cumulativeDistance = 0
+
+    // Add origin
+    allWaypoints.push({
+      name: from,
+      lat: fromLat!,
+      lon: fromLon!,
+      order: 0,
+      distanceFromStart: 0
+    })
+
+    // Add intermediate waypoints with cumulative distances
+    for (let i = 0; i < waypoints.length; i++) {
+      const wp = waypoints[i]
+      const prevPoint = i === 0 ? { lat: fromLat!, lon: fromLon! } : waypoints[i - 1]
+      const segmentDist = haversineDistance(
+        wp.lat, wp.lon,
+        prevPoint.lat, prevPoint.lon
+      )
+      cumulativeDistance += segmentDist
+      allWaypoints.push({
+        name: wp.name,
+        lat: wp.lat,
+        lon: wp.lon,
+        order: i + 1,
+        distanceFromStart: parseFloat(cumulativeDistance.toFixed(2))
+      })
+    }
+
+    // Add destination
+    const lastPoint = waypoints.length > 0 ? waypoints[waypoints.length - 1] : null
+    const finalSegment = lastPoint
+      ? haversineDistance(toLat!, toLon!, lastPoint.lat, lastPoint.lon)
+      : haversineDistance(toLat!, toLon!, fromLat!, fromLon!)
+    cumulativeDistance += finalSegment
+
+    allWaypoints.push({
+      name: to,
+      lat: toLat!,
+      lon: toLon!,
+      order: waypoints.length + 1,
+      distanceFromStart: parseFloat(cumulativeDistance.toFixed(2))
+    })
+
+    return allWaypoints
+  }
+
+  const validateForm = () => {
+    if (!from.trim()) {
+      setError('Please enter your departure location')
+      return false
+    }
+    if (!to.trim()) {
+      setError('Please enter your destination')
+      return false
+    }
+    if (!date) {
+      setError('Please select a departure date')
+      return false
+    }
+    if (!time) {
+      setError('Please select a departure time')
+      return false
+    }
+    if (fromLat === null || fromLon === null) {
+      setError('Please select a valid departure location from suggestions')
+      return false
+    }
+    if (toLat === null || toLon === null) {
+      setError('Please select a valid destination from suggestions')
+      return false
+    }
+    if (price <= 0) {
+      setError('Please set a valid price per seat')
+      return false
+    }
+
+    // Validate all waypoints have names and coordinates
+    for (let i = 0; i < waypoints.length; i++) {
+      const wp = waypoints[i]
+      if (!wp.name.trim()) {
+        setError(`Please enter a name for stop ${i + 1}`)
+        return false
+      }
+      if (wp.lat === 0 || wp.lon === 0) {
+        setError(`Please select a valid location for stop ${i + 1} from suggestions`)
+        return false
+      }
+    }
+
+    setError('')
+    return true
+  }
+
+  const handlePost = async () => {
+    if (!isAuthenticated || !user) {
+      setError('Please login to host a trip')
+      router.push('/login')
+      return
+    }
+
+    if (!validateForm()) {
+      return
+    }
+
+    setPosting(true)
+    setError('')
+
+    try {
+      const waypointsArray = buildWaypointsArray()
+      const totalDistance = calculateTotalDistance()
+
+      const tripData = {
+        from,
+        to,
+        fromLat: fromLat!,
+        fromLon: fromLon!,
+        toLat: toLat!,
+        toLon: toLon!,
+        departureDate: date,
+        departureTime: time,
+        totalSeats: seats,
+        pricePerSeat: price,
+        maxDetourKm: detour,
+        womenOnly,
+        waypoints: waypointsArray,
+        totalDistanceKm: parseFloat(totalDistance.toFixed(2))
+      }
+
+      console.log('Sending trip data:', tripData)
+
+      const response = await api.post('/trips', tripData)
+
+      if (response.data.success) {
+        setPosted(true)
+        setTimeout(() => {
+          router.push(`/trip/${response.data.data._id}`)
+        }, 1500)
+      }
+    } catch (error: any) {
+      console.error('Failed to post trip:', error)
+      console.error('Error response:', error.response?.data)
+      setError(error.response?.data?.message || 'Failed to post trip. Please try again.')
+      setPosting(false)
+    }
+  }
+
+  const totalDistance = calculateTotalDistance()
 
   return (
     <div>
@@ -135,34 +573,94 @@ export default function HostTrip() {
         {/* LEFT column */}
         <div className="space-y-5">
 
+          {/* Error message */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-red-600 text-sm">{error}</p>
+            </div>
+          )}
+
           {/* Route Details */}
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 space-y-4">
             <h2 className="font-semibold text-gray-900 text-sm">Route Details</h2>
             <div className="space-y-1">
               <div className="flex items-center gap-3">
                 <span className="w-3 h-3 rounded-full bg-green-500 shrink-0" />
-                <input type="text" placeholder="Leaving from..." value={from}
-                  onChange={e => handleFromChange(e.target.value)}
-                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                <LocationInput
+                  value={from}
+                  onChange={handleFromChange}
+                  onLocationSelect={handleFromLocationSelect}
+                  placeholder="Leaving from..."
+                />
               </div>
+
+              {/* Waypoints */}
+              {waypoints.map((wp, index) => (
+                <WaypointItem
+                  key={index}
+                  waypoint={wp}
+                  index={index}
+                  onRemove={() => removeWaypoint(index)}
+                  onUpdate={(lat, lon, name) => updateWaypoint(index, lat, lon, name)}
+                />
+              ))}
+
+              {/* Add Waypoint Button */}
+              <button
+                onClick={addWaypoint}
+                className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-700 mt-2 ml-6"
+              >
+                <PlusCircle size={14} />
+                Add intermediate stop
+              </button>
+
               <div className="ml-1 pl-px flex flex-col items-start gap-0">
                 <div className="w-px h-3 bg-gray-300 ml-1" />
                 <div className="w-2 h-2 rounded-full border-2 border-gray-300 ml-0.5" />
                 <div className="w-px h-3 bg-gray-300 ml-1" />
               </div>
+
               <div className="flex items-center gap-3">
                 <span className="w-3 h-3 rounded-full bg-red-500 shrink-0" />
-                <input type="text" placeholder="Going to..." value={to}
-                  onChange={e => handleToChange(e.target.value)}
-                  className="flex-1 border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition" />
+                <LocationInput
+                  value={to}
+                  onChange={handleToChange}
+                  onLocationSelect={handleToLocationSelect}
+                  placeholder="Going to..."
+                />
               </div>
             </div>
+
+            {/* Distance Display */}
+            {totalDistance > 0 && (
+              <div className="mt-3 p-2 bg-gray-50 rounded-lg text-center">
+                <p className="text-xs text-gray-500">
+                  Total route distance: <span className="font-semibold text-gray-700">{totalDistance.toFixed(1)} km</span>
+                </p>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  Estimated travel time: ~{Math.round(totalDistance / 60)} hours
+                </p>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
-              <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition" />
-              <input type="time" value={time} onChange={e => setTime(e.target.value)}
-                className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition" />
+              <input
+                type="date"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                min={new Date().toISOString().split('T')[0]}
+                className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+              />
+              <input
+                type="time"
+                value={time}
+                onChange={e => setTime(e.target.value)}
+                className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+              />
             </div>
+            <p className="text-xs text-gray-400 mt-1">
+              ⚠️ Please select locations from the suggestions to get accurate coordinates
+            </p>
           </div>
 
           {/* Seats & Pricing */}
@@ -177,26 +675,40 @@ export default function HostTrip() {
                     <Minus size={14} />
                   </button>
                   <span className="text-2xl font-bold text-gray-900 w-6 text-center">{seats}</span>
-                  <button onClick={() => setSeats(Math.min(8, seats + 1))}
+                  <button onClick={() => setSeats(Math.min(6, seats + 1))}
                     className="w-9 h-9 rounded-lg border border-gray-200 text-gray-600 flex items-center justify-center hover:bg-gray-50 transition">
                     <Plus size={14} />
                   </button>
                 </div>
+                <p className="text-[10px] text-gray-400 mt-1">Maximum 6 seats</p>
               </div>
               <div>
-                <label className="text-xs text-gray-500 mb-2 block">Price per Seat</label>
+                <label className="text-xs text-gray-500 mb-2 block">Price per Seat (₹)</label>
                 <div className="flex items-center border border-gray-200 rounded-lg px-3 py-2.5 gap-1 focus-within:ring-2 focus-within:ring-blue-500 transition">
                   <span className="text-gray-500 text-sm">₹</span>
-                  <input type="number" value={price} onChange={e => setPrice(Number(e.target.value))}
-                    className="bg-transparent flex-1 text-gray-900 font-semibold text-sm focus:outline-none w-16" />
+                  <input
+                    type="number"
+                    value={price}
+                    onChange={e => setPrice(Number(e.target.value))}
+                    className="bg-transparent flex-1 text-gray-900 font-semibold text-sm focus:outline-none w-16"
+                  />
                 </div>
+                {totalDistance > 0 && (
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    ₹3.5/km · Suggested: ₹{suggestedPrice} ({Math.round(price / totalDistance * 10) / 10} ₹/km)
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-100 rounded-lg p-3">
               <span className="text-blue-500 text-sm mt-0.5">✦</span>
               <div>
-                <p className="text-blue-700 text-xs font-semibold">AI Suggested: ₹580–₹650 per seat</p>
-                <p className="text-blue-500 text-xs mt-0.5">Based on current demand and fuel prices.</p>
+                <p className="text-blue-700 text-xs font-semibold">
+                  AI Suggested: ₹{suggestedPrice} per seat
+                </p>
+                <p className="text-blue-500 text-xs mt-0.5">
+                  Based on {totalDistance.toFixed(1)} km route at ₹3.5/km
+                </p>
               </div>
             </div>
           </div>
@@ -230,22 +742,20 @@ export default function HostTrip() {
 
           {/* Post Trip CTA */}
           <button onClick={handlePost} disabled={posting || posted}
-            className={`w-full py-3 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition ${
-              posted ? 'bg-green-600 text-white cursor-default'
+            className={`w-full py-3 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition ${posted ? 'bg-green-600 text-white cursor-default'
               : posting ? 'bg-blue-400 text-white cursor-wait'
-              : 'bg-blue-600 hover:bg-blue-700 text-white'
-            }`}>
+                : 'bg-blue-600 hover:bg-blue-700 text-white'
+              }`}>
             {posted ? <><CheckCircle2 size={16} /> Trip Posted Successfully!</>
-              : posting ? <><svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>Posting Trip...</>
-              : <>Post Trip <ChevronRight size={16} /></>}
+              : posting ? <><Loader2 size={16} className="animate-spin" /> Posting Trip...</>
+                : <>Post Trip <ChevronRight size={16} /></>}
           </button>
         </div>
 
         {/* RIGHT column */}
         <div className="space-y-4">
-          {/* ✅ Real Leaflet map — updates when From/To are typed */}
           <TripMap from={mapFrom} to={mapTo} />
-          <FareAnalysis price={price} />
+          <FareAnalysis price={price} distance={totalDistance} />
           <ProTips />
         </div>
       </div>

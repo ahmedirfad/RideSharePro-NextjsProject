@@ -37,9 +37,13 @@ const TokenRegenerator = (req, res) => {
     const newAccessToken = jwt.sign(payload, accessKey, { expiresIn: "15m" });
 
     return res
-      .cookie("accessToken", newAccessToken, accessTokenCookieOptions)
-      .cookie("refreshToken", newRefreshToken, refreshTokenCookieOptions)
-      .json({ message: "Access token regenerated successfully" });
+  .cookie("accessToken", newAccessToken, accessTokenCookieOptions)
+  .cookie("refreshToken", newRefreshToken, refreshTokenCookieOptions)
+  .json({ 
+    success: true,
+    accessToken: newAccessToken,  // ✅ add this line
+    message: "Access token regenerated successfully" 
+  })
   } catch (error) {
     return res.status(401).json({ message: "Invalid or expired refresh token" });
   }

@@ -1,12 +1,7 @@
 'use client'
 
-// components/maps/ActiveTripMap.tsx
-// Keep your existing logic — just enhanced styling
-// npm install leaflet  |  npm i -D @types/leaflet
-// globals.css: @import 'leaflet/dist/leaflet.css';
-
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Layers, Crosshair, Navigation, ZoomIn, ZoomOut, Radio } from 'lucide-react'
+import { Layers, Crosshair, Navigation, ZoomIn, ZoomOut } from 'lucide-react'
 
 interface ActiveTripMapProps {
   from: string
@@ -71,7 +66,7 @@ export default function ActiveTripMap({
     setTimeout(() => setToast(''), 3000)
   }, [])
 
-  // ── Init Leaflet ─────────────────────────────────────────────────────────
+  // Init Leaflet
   useEffect(() => {
     if (typeof window === 'undefined' || mapRef.current || !mapDivRef.current) return
     import('leaflet').then(mod => {
@@ -95,29 +90,29 @@ export default function ActiveTripMap({
     }
   }, [])
 
-  // ── Tile switch ──────────────────────────────────────────────────────────
+  // Tile switch
   useEffect(() => { tileRef.current?.setUrl(TILES[tileStyle]) }, [tileStyle])
 
-  // ── Animate dashes ───────────────────────────────────────────────────────
+  // Animate dashes
   useEffect(() => {
     const t = setInterval(() => setDashOffset(p => (p + 1) % 20), 60)
     return () => clearInterval(t)
   }, [])
   useEffect(() => { routeRef.current?.setStyle?.({ dashOffset: String(-dashOffset) }) }, [dashOffset])
 
-  // ── Live progress creep ──────────────────────────────────────────────────
+  // Live progress creep
   useEffect(() => {
     const t = setInterval(() => setLiveProgress(p => Math.min(p + 0.05, 99)), 3000)
     return () => clearInterval(t)
   }, [])
 
-  // ── Move car ─────────────────────────────────────────────────────────────
+  // Move car marker
   useEffect(() => {
     if (!startCoords || !endCoords || !carMarkerRef.current) return
     carMarkerRef.current.setLatLng(lerp(startCoords, endCoords, liveProgress / 100))
   }, [liveProgress, startCoords, endCoords])
 
-  // ── Draw route ───────────────────────────────────────────────────────────
+  // Draw route
   useEffect(() => {
     if (!mapReady || !mapRef.current || !leafletRef.current || !from || !to) return
     const L = leafletRef.current
@@ -162,30 +157,26 @@ export default function ActiveTripMap({
         lineCap: 'round', opacity: 0.9,
       }).addTo(mapRef.current)
 
-      // Start icon
+      // Start pin
       const startIcon = L.divIcon({
         className: '',
         html: `<div style="display:flex;flex-direction:column;align-items:center;gap:3px">
           <div style="width:13px;height:13px;border-radius:50%;background:#22c55e;border:3px solid white;
-            box-shadow:0 0 0 4px rgba(34,197,94,0.25),0 3px 10px rgba(34,197,94,0.5)"></div>
-          <div style="font-size:9px;font-weight:900;color:#22c55e;background:rgba(0,0,0,0.8);
-            border:1px solid rgba(34,197,94,0.3);border-radius:4px;padding:2px 6px;white-space:nowrap;letter-spacing:0.05em">
-            ${from.split(',')[0].substring(0,12).toUpperCase()}
-          </div>
+            box-shadow:0 0 0 4px rgba(34,197,94,0.25)"></div>
+          <div style="font-size:9px;font-weight:900;color:#22c55e;background:rgba(0,0,0,0.7);
+            border-radius:4px;padding:2px 6px">${from.split(',')[0].substring(0,12)}</div>
         </div>`,
         iconSize: [90, 32], iconAnchor: [45, 7],
       })
 
-      // End icon
+      // End pin
       const endIcon = L.divIcon({
         className: '',
         html: `<div style="display:flex;flex-direction:column;align-items:center;gap:3px">
           <div style="width:13px;height:13px;border-radius:50%;background:#ef4444;border:3px solid white;
-            box-shadow:0 0 0 4px rgba(239,68,68,0.25),0 3px 10px rgba(239,68,68,0.5)"></div>
-          <div style="font-size:9px;font-weight:900;color:#ef4444;background:rgba(0,0,0,0.8);
-            border:1px solid rgba(239,68,68,0.3);border-radius:4px;padding:2px 6px;white-space:nowrap;letter-spacing:0.05em">
-            ${to.split(',')[0].substring(0,12).toUpperCase()}
-          </div>
+            box-shadow:0 0 0 4px rgba(239,68,68,0.25)"></div>
+          <div style="font-size:9px;font-weight:900;color:#ef4444;background:rgba(0,0,0,0.7);
+            border-radius:4px;padding:2px 6px">${to.split(',')[0].substring(0,12)}</div>
         </div>`,
         iconSize: [90, 32], iconAnchor: [45, 7],
       })
@@ -194,8 +185,7 @@ export default function ActiveTripMap({
       const pickupIcon = L.divIcon({
         className: '',
         html: `<div style="background:#1e293b;color:#fbbf24;font-size:9px;font-weight:900;
-          padding:4px 8px;border-radius:20px;border:1.5px solid #fbbf24;white-space:nowrap;
-          box-shadow:0 2px 10px rgba(0,0,0,0.5);letter-spacing:0.08em">
+          padding:4px 8px;border-radius:20px;border:1px solid #fbbf24;white-space:nowrap">
           ⚡ AI PICKUP
         </div>`,
         className: '', iconAnchor: [44, 14],
@@ -208,16 +198,16 @@ export default function ActiveTripMap({
         html: `
           <div style="position:relative;width:42px;height:42px;display:flex;align-items:center;justify-content:center">
             <div style="position:absolute;width:42px;height:42px;border-radius:50%;background:rgba(37,99,235,0.18);
-              animation:p1 2s ease-in-out infinite"></div>
+              animation:pulse 2s ease-in-out infinite"></div>
             <div style="position:absolute;width:30px;height:30px;border-radius:50%;background:rgba(37,99,235,0.25);
-              animation:p1 2s ease-in-out infinite;animation-delay:0.5s"></div>
+              animation:pulse 2s ease-in-out infinite;animation-delay:0.5s"></div>
             <div style="position:relative;z-index:2;width:24px;height:24px;border-radius:50%;
               background:linear-gradient(135deg,#2563eb,#1d4ed8);
               border:3px solid white;
-              box-shadow:0 0 0 2px rgba(59,130,246,0.4),0 4px 14px rgba(37,99,235,0.7);
+              box-shadow:0 0 0 2px rgba(59,130,246,0.4);
               display:flex;align-items:center;justify-content:center;font-size:12px">🚗</div>
           </div>
-          <style>@keyframes p1{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(1.4);opacity:.1}}</style>
+          <style>@keyframes pulse{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(1.4);opacity:.1}}</style>
         `,
         iconSize: [42, 42], iconAnchor: [21, 21],
       })
@@ -235,8 +225,7 @@ export default function ActiveTripMap({
     }
 
     run()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, mapReady])
+  }, [from, to, mapReady, liveProgress, distanceKm, etaHours, showToast])
 
   const handleRecenter = () => {
     if (!startCoords || !endCoords) return
@@ -261,12 +250,10 @@ export default function ActiveTripMap({
 
   return (
     <div className="relative w-full h-full flex flex-col overflow-hidden">
-      {/* Leaflet CSS */}
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 
-      {/* Map */}
       <div className="relative flex-1">
-        <div ref={mapDivRef} className="w-full h-full" style={{ minHeight: '320px' }} />
+        <div ref={mapDivRef} className="w-full h-full" style={{ minHeight: '340px' }} />
 
         {/* GPS badge */}
         <div className="absolute top-3 left-3 z-[1000] flex items-center gap-1.5 bg-black/70 backdrop-blur-sm border border-green-500/30 text-green-400 text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full shadow-lg">
@@ -274,7 +261,7 @@ export default function ActiveTripMap({
         </div>
 
         {/* Progress badge */}
-        <div className="absolute top-3 right-3 z-[1000] bg-blue-600/90 backdrop-blur-sm text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg border border-blue-400/30">
+        <div className="absolute top-3 right-3 z-[1000] bg-blue-600/90 backdrop-blur-sm text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg">
           {Math.round(liveProgress)}% complete
         </div>
 
@@ -291,21 +278,19 @@ export default function ActiveTripMap({
 
         {/* Controls HUD */}
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-1.5 bg-black/80 backdrop-blur-md border border-white/10 rounded-2xl px-4 py-1.5 shadow-xl">
-          {[
-            { icon: Crosshair,  fn: handleRecenter,    active: false,              title: 'Recenter' },
-            { icon: Navigation, fn: handleMyLocation,  active: !!userCoords || isTracking, title: 'My location' },
-          ].map(({ icon: Icon, fn, active, title }) => (
-            <button key={title} onClick={fn} title={title}
-              className={`w-7 h-7 rounded-full border flex items-center justify-center transition active:scale-90 ${
-                active
-                  ? 'bg-blue-600 border-blue-600 text-white'
-                  : 'bg-gray-800 hover:bg-blue-900 border-gray-700 hover:border-blue-600 text-gray-400 hover:text-blue-400'
-              }`}>
-              <Icon size={12} />
-            </button>
-          ))}
+          <button onClick={handleRecenter} title="Recenter"
+            className="w-7 h-7 rounded-full bg-gray-800 hover:bg-blue-900 border border-gray-700 hover:border-blue-600 text-gray-400 hover:text-blue-400 flex items-center justify-center transition active:scale-90">
+            <Crosshair size={12} />
+          </button>
+          <button onClick={handleMyLocation} title="My location"
+            className={`w-7 h-7 rounded-full border flex items-center justify-center transition active:scale-90 ${
+              isTracking || userCoords
+                ? 'bg-blue-600 border-blue-600 text-white'
+                : 'bg-gray-800 hover:bg-blue-900 border-gray-700 hover:border-blue-600 text-gray-400 hover:text-blue-400'
+            }`}>
+            <Navigation size={12} />
+          </button>
           <div className="w-px h-4 bg-gray-700" />
-          {/* Tile buttons */}
           {(Object.keys(TILES) as (keyof typeof TILES)[]).map(s => (
             <button key={s} onClick={() => setTileStyle(s)}
               className={`text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded transition ${
@@ -316,11 +301,11 @@ export default function ActiveTripMap({
           ))}
           <div className="w-px h-4 bg-gray-700" />
           <button onClick={() => mapRef.current?.zoomIn()}
-            className="w-7 h-7 rounded-full bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white flex items-center justify-center transition active:scale-90">
+            className="w-7 h-7 rounded-full bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white flex items-center justify-center transition">
             <ZoomIn size={12} />
           </button>
           <button onClick={() => mapRef.current?.zoomOut()}
-            className="w-7 h-7 rounded-full bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white flex items-center justify-center transition active:scale-90">
+            className="w-7 h-7 rounded-full bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-400 hover:text-white flex items-center justify-center transition">
             <ZoomOut size={12} />
           </button>
         </div>

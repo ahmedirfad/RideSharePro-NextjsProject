@@ -1,31 +1,55 @@
+// server/models/Booking.js
 const mongoose = require("mongoose");
 
 const BookingSchema = new mongoose.Schema(
   {
-    tripId: { type: mongoose.Schema.Types.ObjectId, ref: "Trip", required: true },
-    passengerId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    seatsBooked: { type: Number, required: true, min: 1 },
-    totalAmount: { type: Number, required: true, min: 0 },
-    platformFee: { type: Number, required: true, min: 0 },
-    driverEarning: { type: Number, required: true, min: 0 },
-    pickupLocation: { type: String, required: true },
+    tripId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Trip",
+      required: true,
+    },
+    passengerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+
+    // ── Segment fields ────────────────────────────────────────────────────
+    seatNumber: { type: Number, required: true },  // physical seat claimed
+
+    // Waypoint indexes into trip.waypoints[]
+    fromOrder: { type: Number, required: true },   // boarding stop index
+    toOrder: { type: Number, required: true },     // alighting stop index
+
+    // Denormalised for display — so we don't need to re-fetch the trip
+    fromName: { type: String, required: true },    // e.g. "Kannur"
+    toName: { type: String, required: true },      // e.g. "Kochi"
+
+    // ── Fare (locked at booking time) ─────────────────────────────────────
+    distanceKm: { type: Number, required: true },  // segment distance
+    fareCharged: { type: Number, required: true }, // ₹ locked at booking
+
+    // ── Legacy (kept for getMyTrips backward compat) ──────────────────────
+    seatsBooked: { type: Number, default: 1 },
+    totalAmount: { type: Number },                 // alias for fareCharged
+
     status: {
       type: String,
       enum: ["pending", "confirmed", "cancelled", "completed"],
-      default: "pending",
+      default: "confirmed",
     },
-    paymentStatus: {
-      type: String,
-      enum: ["pending", "paid", "refunded"],
-      default: "pending",
-    },
-    stripePaymentId: { type: String, default: "" },
   },
   { timestamps: true }
 );
 
-// Indexes for faster queries
-BookingSchema.index({ passengerId: 1, createdAt: -1 });
-BookingSchema.index({ tripId: 1, status: 1 });
+// FIXED: Sync totalAmount with fareCharged on save - NO next()
+BookingSchema.pre("save", function () {
+  if (this.fareCharged != null) {
+    this.totalAmount = this.fareCharged;
+  }
+});
+
+BookingSchema.index({ tripId: 1, passengerId: 1 });
+BookingSchema.index({ passengerId: 1, status: 1 });
 
 module.exports = mongoose.model("Booking", BookingSchema);
