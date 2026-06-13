@@ -2,7 +2,6 @@ const Trip = require("../models/Trip");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
 
-// ==================== CREATE BOOKING ====================
 const createBooking = async (req, res) => {
   try {
     const { tripId, seatsBooked, pickupLocation } = req.body;
@@ -62,7 +61,6 @@ const createBooking = async (req, res) => {
   }
 };
 
-// ==================== GET MY BOOKINGS ====================
 const getMyBookings = async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -84,7 +82,6 @@ const getMyBookings = async (req, res) => {
   }
 };
 
-// ==================== GET BOOKING BY ID ====================
 const getBookingById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -115,7 +112,6 @@ const getBookingById = async (req, res) => {
   }
 };
 
-// ==================== GET TRIP BOOKINGS (for driver) ====================
 const getTripBookings = async (req, res) => {
   try {
     const { tripId } = req.params;
@@ -145,7 +141,6 @@ const getTripBookings = async (req, res) => {
   }
 };
 
-// ==================== CANCEL BOOKING ====================
 const cancelBooking = async (req, res) => {
   try {
     const { id } = req.params;
@@ -190,7 +185,6 @@ const cancelBooking = async (req, res) => {
   }
 };
 
-// ==================== CONFIRM BOOKING (by driver) ====================
 const confirmBooking = async (req, res) => {
   try {
     const { id } = req.params;

@@ -244,6 +244,19 @@ function TripCard({ trip, searchFrom, searchTo, searchDate }: {
         return `${displayHour}:${minute} ${period}`
     }
 
+    // Build the detail link with all segment parameters
+    const detailLink = `/trip/${trip.id}` +
+        `?from=${encodeURIComponent(searchFrom)}` +
+        `&to=${encodeURIComponent(searchTo)}` +
+        `&date=${searchDate}` +
+        `&returnTo=/search` +
+        `&guestFrom=${encodeURIComponent(trip.fromWaypointName || trip.from)}` +
+        `&guestTo=${encodeURIComponent(trip.toWaypointName || trip.to)}` +
+        `&guestDistance=${trip.distanceKm}` +
+        `&guestFare=${trip.price}` +
+        `&fromOrder=${trip.fromOrder}` +
+        `&toOrder=${trip.toOrder}`
+
     return (
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition overflow-hidden">
             <div className="flex">
@@ -341,7 +354,7 @@ function TripCard({ trip, searchFrom, searchTo, searchDate }: {
                                 <p className="text-2xl font-bold text-blue-600">₹{trip.price}</p>
                                 <p className="text-[10px] text-gray-400">for {trip.distanceKm}km</p>
                             </div>
-                            <Link href={`/trip/${trip.id}?from=${encodeURIComponent(searchFrom)}&to=${encodeURIComponent(searchTo)}&date=${searchDate}`}>
+                            <Link href={detailLink}>
                                 <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition">
                                     View Ride
                                 </button>
@@ -386,7 +399,6 @@ export default function FindARidePage() {
         setFrom(tempTo)
         setTo(tempFrom)
         
-        // If search was already performed, search again with swapped values
         if (searched) {
             setTimeout(() => {
                 performSearch(filters, true)

@@ -38,39 +38,83 @@ interface Waypoint {
   distanceFromStart: number
 }
 
-// ─── Search using Nominatim ──────────────────────────────────────────────
+// ─── Mock Indian cities for fallback when Nominatim fails ────────────────────
+const MOCK_CITIES = [
+  { name: 'Kozhikode', state: 'Kerala', lat: '11.2588', lon: '75.7804' },
+  { name: 'Kochi', state: 'Kerala', lat: '9.9312', lon: '76.2673' },
+  { name: 'Thiruvananthapuram', state: 'Kerala', lat: '8.5241', lon: '76.9366' },
+  { name: 'Kannur', state: 'Kerala', lat: '11.8745', lon: '75.3704' },
+  { name: 'Kasaragod', state: 'Kerala', lat: '12.4996', lon: '74.9869' },
+  { name: 'Bangalore', state: 'Karnataka', lat: '12.9716', lon: '77.5946' },
+  { name: 'Mumbai', state: 'Maharashtra', lat: '19.0760', lon: '72.8777' },
+  { name: 'Chennai', state: 'Tamil Nadu', lat: '13.0827', lon: '80.2707' },
+  { name: 'Delhi', state: 'Delhi', lat: '28.6139', lon: '77.2090' },
+  { name: 'Hyderabad', state: 'Telangana', lat: '17.3850', lon: '78.4867' },
+  { name: 'Pune', state: 'Maharashtra', lat: '18.5204', lon: '73.8567' },
+  { name: 'Jaipur', state: 'Rajasthan', lat: '26.9124', lon: '75.7873' },
+  { name: 'Ahmedabad', state: 'Gujarat', lat: '23.0225', lon: '72.5714' },
+  { name: 'Lucknow', state: 'Uttar Pradesh', lat: '26.8467', lon: '80.9462' },
+  { name: 'Kolkata', state: 'West Bengal', lat: '22.5726', lon: '88.3639' },
+  { name: 'Coimbatore', state: 'Tamil Nadu', lat: '11.0168', lon: '76.9558' },
+  { name: 'Thrissur', state: 'Kerala', lat: '10.5276', lon: '76.2144' },
+  { name: 'Malappuram', state: 'Kerala', lat: '11.0510', lon: '76.0711' },
+  { name: 'Palakkad', state: 'Kerala', lat: '10.7867', lon: '76.6548' },
+  { name: 'Wayanad', state: 'Kerala', lat: '11.6854', lon: '76.1320' },
+]
+
+// ─── Search using Nominatim with fallback ──────────────────────────────────────
 async function searchLocations(query: string): Promise<Suggestion[]> {
   if (!query.trim() || query.length < 2) return []
 
+  // Try Nominatim first
   try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
+    
     const res = await fetch(
       `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ', India')}&format=json&limit=5&addressdetails=1`,
       {
         headers: {
           'User-Agent': 'RideSharePro/1.0 (contact@ridesharepro.com)'
-        }
+        },
+        signal: controller.signal
       }
     )
-
-    if (!res.ok) return []
-
-    const data = await res.json()
-
-    return data.map((item: any) => ({
-      display_name: item.display_name,
-      lat: item.lat,
-      lon: item.lon,
-      type: item.type
-    }))
+    
+    clearTimeout(timeoutId)
+    
+    if (res.ok) {
+      const data = await res.json()
+      if (data && data.length > 0) {
+        return data.map((item: any) => ({
+          display_name: item.display_name,
+          lat: item.lat,
+          lon: item.lon,
+          type: item.type
+        }))
+      }
+    }
   } catch (error) {
-    console.error('Nominatim search error:', error)
-    return []
+    console.log('Nominatim failed, using fallback')
   }
+
+  // Fallback to mock data
+  const filtered = MOCK_CITIES.filter(city => 
+    city.name.toLowerCase().includes(query.toLowerCase()) ||
+    city.state.toLowerCase().includes(query.toLowerCase())
+  )
+
+  return filtered.map(city => ({
+    display_name: `${city.name}, ${city.state}, India`,
+    lat: city.lat,
+    lon: city.lon,
+    type: 'city'
+  }))
 }
 
 // ─── Haversine distance calculation ──────────────────────────────────────
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371 // Earth's radius in km
+  const R = 6371
   const dLat = (lat2 - lat1) * Math.PI / 180
   const dLon = (lon2 - lon1) * Math.PI / 180
   const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -82,16 +126,15 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 
 // ─── Calculate suggested price based on distance (₹3.5 per km) ────────────
 function calculateSuggestedPrice(distanceKm: number): number {
-  // Base price: ₹3.5 per km, minimum ₹50, maximum ₹2000
   const basePrice = distanceKm * 3.5
   const minPrice = 50
   const maxPrice = 2000
-  
-  let price = Math.round(basePrice / 10) * 10 // Round to nearest ₹10
-  
+
+  let price = Math.round(basePrice / 10) * 10
+
   if (price < minPrice) price = minPrice
   if (price > maxPrice) price = maxPrice
-  
+
   return price
 }
 
@@ -132,7 +175,7 @@ function LocationInput({
       setSuggestions(results)
       setShowSuggestions(results.length > 0)
       setIsLoading(false)
-    }, 300)
+    }, 500)
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -230,12 +273,35 @@ function WaypointItem({ waypoint, index, onRemove, onUpdate }: {
 }
 
 function FareAnalysis({ price, distance }: { price: number; distance: number }) {
-  const low = Math.max(50, Math.round(distance * 2.5 / 10) * 10)
-  const high = Math.max(100, Math.round(distance * 4.5 / 10) * 10)
-  const pct = Math.min(Math.max(((price - low) / (high - low)) * 100, 3), 95)
-  
-  const fuelCost = Math.round(distance * 8) // ₹8 per km approx
-  
+  const lowPerKm = 2.5
+  const highPerKm = 4.5
+  const yourRate = distance > 0 ? price / distance : 0
+
+  const low = Math.round(distance * lowPerKm / 10) * 10
+  const high = Math.round(distance * highPerKm / 10) * 10
+
+  const finalLow = Math.max(50, low)
+  const finalHigh = Math.max(100, high)
+
+  let pct = 50
+  if (distance > 0) {
+    const range = highPerKm - lowPerKm
+    const position = (yourRate - lowPerKm) / range
+    pct = Math.min(95, Math.max(5, position * 100))
+  }
+
+  const fuelCost = Math.round(distance * 8)
+
+  let demandLevel = 'Medium →'
+  let demandColor = 'text-yellow-600'
+  if (yourRate > 3.8) {
+    demandLevel = 'High ↑'
+    demandColor = 'text-green-600'
+  } else if (yourRate < 3.2) {
+    demandLevel = 'Low ↓'
+    demandColor = 'text-red-500'
+  }
+
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 space-y-4">
       <div className="flex items-center gap-2">
@@ -244,17 +310,21 @@ function FareAnalysis({ price, distance }: { price: number; distance: number }) 
       </div>
       <div>
         <div className="flex justify-between text-xs text-gray-400 mb-1.5">
-          <span>Low Demand</span><span>High Demand</span>
+          <span>Low Demand (₹{lowPerKm}/km)</span>
+          <span>High Demand (₹{highPerKm}/km)</span>
         </div>
         <div className="relative h-2 rounded-full bg-gradient-to-r from-blue-400 via-amber-400 to-rose-500">
           <div className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-blue-600 rounded-full shadow transition-all"
             style={{ left: `${pct}%` }} />
         </div>
         <div className="flex justify-between text-xs text-gray-400 mt-1.5">
-          <span>₹{low}</span>
+          <span>₹{finalLow}</span>
           <span className="text-blue-600 font-semibold">₹{price}</span>
-          <span>₹{high}</span>
+          <span>₹{finalHigh}</span>
         </div>
+        <p className="text-[10px] text-gray-500 text-center mt-2">
+          Your rate: <span className="font-semibold text-blue-600">₹{yourRate.toFixed(2)}/km</span>
+        </p>
       </div>
       <div className="space-y-2 text-sm border-t border-gray-100 pt-3">
         <div className="flex justify-between text-gray-600">
@@ -263,7 +333,7 @@ function FareAnalysis({ price, distance }: { price: number; distance: number }) 
         </div>
         <div className="flex justify-between text-gray-600">
           <span className="flex items-center gap-1.5"><TrendingUp size={14} className="text-gray-400" /> Current Demand</span>
-          <span className="font-semibold text-green-600">Medium ↑</span>
+          <span className={`font-semibold ${demandColor}`}>{demandLevel}</span>
         </div>
       </div>
     </div>
@@ -304,7 +374,7 @@ export default function HostTrip() {
   const [date, setDate] = useState('')
   const [time, setTime] = useState('')
   const [seats, setSeats] = useState(3)
-  const [price, setPrice] = useState(0)  // Start with 0, will update when distance is calculated
+  const [price, setPrice] = useState(0)
   const [detour, setDetour] = useState(5)
   const [womenOnly, setWomenOnly] = useState(false)
   const [posting, setPosting] = useState(false)
@@ -312,17 +382,20 @@ export default function HostTrip() {
   const [error, setError] = useState('')
   const [suggestedPrice, setSuggestedPrice] = useState(0)
 
-  // Store lat/lon for from and to locations
   const [fromLat, setFromLat] = useState<number | null>(null)
   const [fromLon, setFromLon] = useState<number | null>(null)
   const [toLat, setToLat] = useState<number | null>(null)
   const [toLon, setToLon] = useState<number | null>(null)
 
-  // Debounced values passed to map
   const [mapFrom, setMapFrom] = useState('')
   const [mapTo, setMapTo] = useState('')
   const fromTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Convert waypoints for map display
+  const mapWaypoints = waypoints
+    .filter(wp => wp.name && wp.lat && wp.lon)
+    .map(wp => ({ name: wp.name, lat: wp.lat, lon: wp.lon }))
 
   const handleFromChange = (val: string) => {
     setFrom(val)
@@ -353,7 +426,7 @@ export default function HostTrip() {
     if (totalDist > 0) {
       const suggested = calculateSuggestedPrice(totalDist)
       setSuggestedPrice(suggested)
-      setPrice(suggested)  // Auto-set price to suggested value
+      setPrice(suggested)
     }
   }
 
@@ -398,7 +471,6 @@ export default function HostTrip() {
     return total
   }
 
-  // Update suggested price when distance changes
   useEffect(() => {
     updateSuggestedPrice()
   }, [fromLat, fromLon, toLat, toLon, waypoints])
@@ -407,7 +479,6 @@ export default function HostTrip() {
     const allWaypoints = []
     let cumulativeDistance = 0
 
-    // Add origin
     allWaypoints.push({
       name: from,
       lat: fromLat!,
@@ -416,7 +487,6 @@ export default function HostTrip() {
       distanceFromStart: 0
     })
 
-    // Add intermediate waypoints with cumulative distances
     for (let i = 0; i < waypoints.length; i++) {
       const wp = waypoints[i]
       const prevPoint = i === 0 ? { lat: fromLat!, lon: fromLon! } : waypoints[i - 1]
@@ -434,7 +504,6 @@ export default function HostTrip() {
       })
     }
 
-    // Add destination
     const lastPoint = waypoints.length > 0 ? waypoints[waypoints.length - 1] : null
     const finalSegment = lastPoint
       ? haversineDistance(toLat!, toLon!, lastPoint.lat, lastPoint.lon)
@@ -482,7 +551,6 @@ export default function HostTrip() {
       return false
     }
 
-    // Validate all waypoints have names and coordinates
     for (let i = 0; i < waypoints.length; i++) {
       const wp = waypoints[i]
       if (!wp.name.trim()) {
@@ -534,8 +602,6 @@ export default function HostTrip() {
         totalDistanceKm: parseFloat(totalDistance.toFixed(2))
       }
 
-      console.log('Sending trip data:', tripData)
-
       const response = await api.post('/trips', tripData)
 
       if (response.data.success) {
@@ -546,7 +612,6 @@ export default function HostTrip() {
       }
     } catch (error: any) {
       console.error('Failed to post trip:', error)
-      console.error('Error response:', error.response?.data)
       setError(error.response?.data?.message || 'Failed to post trip. Please try again.')
       setPosting(false)
     }
@@ -573,7 +638,6 @@ export default function HostTrip() {
         {/* LEFT column */}
         <div className="space-y-5">
 
-          {/* Error message */}
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
               <p className="text-red-600 text-sm">{error}</p>
@@ -594,7 +658,6 @@ export default function HostTrip() {
                 />
               </div>
 
-              {/* Waypoints */}
               {waypoints.map((wp, index) => (
                 <WaypointItem
                   key={index}
@@ -605,7 +668,6 @@ export default function HostTrip() {
                 />
               ))}
 
-              {/* Add Waypoint Button */}
               <button
                 onClick={addWaypoint}
                 className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-700 mt-2 ml-6"
@@ -631,7 +693,6 @@ export default function HostTrip() {
               </div>
             </div>
 
-            {/* Distance Display */}
             {totalDistance > 0 && (
               <div className="mt-3 p-2 bg-gray-50 rounded-lg text-center">
                 <p className="text-xs text-gray-500">
@@ -754,7 +815,7 @@ export default function HostTrip() {
 
         {/* RIGHT column */}
         <div className="space-y-4">
-          <TripMap from={mapFrom} to={mapTo} />
+          <TripMap from={mapFrom} to={mapTo} waypoints={mapWaypoints} />
           <FareAnalysis price={price} distance={totalDistance} />
           <ProTips />
         </div>

@@ -27,7 +27,6 @@ export const useAuthStore = create<AuthState>()(
       _hasHydrated: false,
       
       setAuth: (user, token) => {
-        // Store both in Zustand and localStorage
         localStorage.setItem('accessToken', token)
         set({ user, token, isAuthenticated: true })
       },
@@ -45,8 +44,15 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'auth-storage',
       onRehydrateStorage: () => (state) => {
+        // Handle rehydration completion
         state?.setHasHydrated(true)
       },
     }
   )
 )
+
+// Helper hook to check if store is hydrated
+export const useAuthHydrated = () => {
+  const hasHydrated = useAuthStore((state) => state._hasHydrated)
+  return hasHydrated
+}

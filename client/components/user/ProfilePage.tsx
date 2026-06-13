@@ -270,8 +270,8 @@ export default function ProfilePage() {
         setUserData(userRes.data.user)
       }
 
-      // Fetch trips for stats
-      const tripsRes = await api.get('/trips/trips/all')
+      // FIXED: Correct endpoint - /trips/my-trips/all (NOT /trips/trips/all)
+      const tripsRes = await api.get('/trips/my-trips/all')
       if (tripsRes.data.success) {
         const allTrips = tripsRes.data.data.all || []
         const hostedTrips = allTrips.filter((t: any) => t.role === 'HOST')
@@ -304,6 +304,10 @@ export default function ProfilePage() {
       }
     } catch (error: any) {
       console.error('Failed to fetch user data', error)
+      if (error.response?.status === 401) {
+        logout()
+        router.push('/login')
+      }
       setError(error.response?.data?.message || 'Failed to load profile')
     } finally {
       setLoading(false)

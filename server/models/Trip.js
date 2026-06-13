@@ -53,9 +53,8 @@ const TripSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// PRE-SAVE HOOK - NO next()
 TripSchema.pre("save", function () {
-  // 1. Auto-build seats array for new trips
+  
   if (this.isNew && this.seats.length === 0 && this.totalSeats > 0) {
     this.seats = Array.from({ length: this.totalSeats }, (_, i) => ({
       seatNumber: i + 1,
@@ -63,7 +62,7 @@ TripSchema.pre("save", function () {
     }));
   }
 
-  // 2. Derive totalDistanceKm and farePerKm from waypoints
+  
   if (this.waypoints && this.waypoints.length >= 2) {
     const totalDist = this.waypoints[this.waypoints.length - 1].distanceFromStart;
     this.totalDistanceKm = totalDist;
@@ -72,7 +71,7 @@ TripSchema.pre("save", function () {
     }
   }
 
-  // 3. Keep legacy seatsAvailable in sync
+
   if (this.seats && this.seats.length > 0) {
     const fullyFreeSeats = this.seats.filter(
       (s) => !s.bookings.some((b) => b.status === "confirmed")

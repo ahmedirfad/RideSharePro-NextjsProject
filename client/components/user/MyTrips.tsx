@@ -26,6 +26,8 @@ interface Trip {
   segment?: string
   fromName?: string
   toName?: string
+  fromOrder?: number
+  toOrder?: number
   seatNumber?: number
   distanceKm?: number
   role: 'HOST' | 'GUEST'
@@ -84,26 +86,41 @@ export default function MyTrips() {
       if (response.data.success) {
         const allTrips = response.data.data.all || []
         
-        const formattedTrips: Trip[] = allTrips.map((trip: any) => ({
-          id: trip.id,
-          tripId: trip.id,
-          route: trip.route,
-          segment: trip.segment || (trip.fromName && trip.toName ? `${trip.fromName} → ${trip.toName}` : trip.route),
-          fromName: trip.fromName,
-          toName: trip.toName,
-          seatNumber: trip.seatNumber,
-          distanceKm: trip.distanceKm,
-          role: trip.role,
-          date: trip.date,
-          time: trip.time,
-          status: trip.status,
-          seats: trip.seats,
-          amount: trip.amount,
-          passengers: trip.passengers,
-          driver: trip.driver,
-          canReview: trip.canReview,
-          canTrack: trip.status === 'ONGOING',
-        }))
+        const formattedTrips: Trip[] = allTrips.map((trip: any) => {
+          let fromName = trip.fromName || ''
+          let toName   = trip.toName   || ''
+
+          if ((!fromName || !toName) && trip.route && trip.route.includes('→')) {
+            const parts = trip.route.split('→').map((s: string) => s.trim())
+            fromName = fromName || parts[0] || ''
+            toName   = toName   || parts[1] || ''
+          }
+
+          return {
+            id:          trip.tripId || trip.id,
+            tripId:      trip.tripId || trip.id,
+            route:       trip.route,
+            segment:     trip.role === 'GUEST'
+                           ? (fromName && toName ? `${fromName} → ${toName}` : trip.route)
+                           : trip.route,
+            fromName,
+            toName,
+            fromOrder:   trip.fromOrder,
+            toOrder:     trip.toOrder,
+            seatNumber:  trip.seatNumber,
+            distanceKm:  trip.distanceKm,
+            role:        trip.role,
+            date:        trip.date,
+            time:        trip.time,
+            status:      trip.status,
+            seats:       trip.seats,
+            amount:      trip.amount,
+            passengers:  trip.passengers,
+            driver:      trip.driver,
+            canReview:   trip.canReview,
+            canTrack:    trip.status === 'ONGOING',
+          }
+        })
         
         setTrips(formattedTrips)
       }
@@ -344,6 +361,39 @@ export default function MyTrips() {
           const isCancelling = cancellingId === trip.id
           const isGuest = trip.role === 'GUEST'
 
+          // Extract numeric amount from string (e.g., "₹160" -> 160)
+          const numericAmount = parseInt(trip.amount.replace('₹', '')) || 0
+
+          // ─── FIX B: Fixed detailLink construction with guestFare ───────────────
+          const detailLink = (() => {
+            if (!isGuest) {
+              return `/trip/${trip.tripId || trip.id}?returnTo=/trips`
+            }
+
+            const gF = trip.fromName || ''
+            const gT = trip.toName   || ''
+
+            let resolvedFrom = gF
+            let resolvedTo   = gT
+            if ((!resolvedFrom || !resolvedTo) && trip.route?.includes('→')) {
+              const parts = trip.route.split('→').map((s: string) => s.trim())
+              resolvedFrom = resolvedFrom || parts[0] || ''
+              resolvedTo   = resolvedTo   || parts[1] || ''
+            }
+
+            return (
+              `/trip/${trip.tripId || trip.id}` +
+              `?returnTo=/trips` +
+              `&guestFrom=${encodeURIComponent(resolvedFrom)}` +
+              `&guestTo=${encodeURIComponent(resolvedTo)}` +
+              `&guestDistance=${trip.distanceKm || 0}` +
+              `&guestFare=${numericAmount}` +
+              `&fromOrder=${trip.fromOrder ?? 0}` +
+              `&toOrder=${trip.toOrder ?? 1}` +
+              `&seatNumber=${trip.seatNumber || ''}`
+            )
+          })()
+
           return (
             <div key={trip.id} className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition overflow-hidden">
               <div className="p-4">
@@ -367,8 +417,7 @@ export default function MyTrips() {
                         </button>
                       </Link>
                     )}
-                    {/* Updated: Pass returnTo=/trips parameter */}
-                    <Link href={`/trip/${trip.tripId || trip.id}?returnTo=/trips`} className="text-blue-600 text-sm hover:underline flex items-center gap-1">
+                    <Link href={detailLink} className="text-blue-600 text-sm hover:underline flex items-center gap-1">
                       Details <ChevronRight size={14} />
                     </Link>
                   </div>

@@ -1,4 +1,3 @@
-// server/controllers/tripController.js
 const mongoose = require("mongoose");
 const Trip = require("../models/Trip");
 const Booking = require("../models/Booking");
@@ -10,8 +9,6 @@ const {
     buildFreeSeatsQuery,
 } = require("../utils/segmentUtils");
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function getStatus(tripStatus, departureDate) {
     if (tripStatus === "cancelled") return "CANCELLED";
     if (tripStatus === "completed") return "COMPLETED";
@@ -22,10 +19,8 @@ function getStatus(tripStatus, departureDate) {
     return "UPCOMING";
 }
 
-// Degrees → radians
 const toRad = (deg) => (deg * Math.PI) / 180;
 
-// Haversine distance in km between two [lon, lat] pairs
 function haversineKm(coordsA, coordsB) {
     const [lonA, latA] = coordsA;
     const [lonB, latB] = coordsB;
@@ -38,10 +33,6 @@ function haversineKm(coordsA, coordsB) {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/**
- * Find the closest waypoint to a given [lon, lat] within maxDetourKm.
- * Returns the waypoint or null.
- */
 function closestWaypoint(waypoints, coords, maxDetourKm) {
     let best = null;
     let bestDist = Infinity;
@@ -55,29 +46,6 @@ function closestWaypoint(waypoints, coords, maxDetourKm) {
     return best;
 }
 
-// ─── CREATE TRIP ─────────────────────────────────────────────────────────────
-/**
- * POST /trips
- *
- * Body:
- * {
- *   from, to,
- *   fromLat, fromLon, toLat, toLon,
- *   departureDate, departureTime,
- *   totalSeats, pricePerSeat,
- *   maxDetourKm, womenOnly,
- *   waypoints: [           ← NEW (required)
- *     { name, lat, lon, distanceFromStart, order },
- *     ...
- *   ]
- * }
- *
- * waypoints must be ordered (order: 0, 1, 2 …) with distanceFromStart in km.
- * waypoints[0] === from, waypoints[last] === to.
- *
- * If the client sends only from/to without intermediate stops, the controller
- * will still work — waypoints will have exactly 2 entries.
- */
 const createTrip = async (req, res) => {
     try {
         const {
@@ -90,7 +58,6 @@ const createTrip = async (req, res) => {
             waypoints: rawWaypoints,
         } = req.body;
 
-        // ── Basic validation ────────────────────────────────────────────────────
         if (!from || !to || !departureDate || !departureTime || !totalSeats || !pricePerSeat) {
             return res.status(400).json({
                 success: false,
@@ -98,20 +65,16 @@ const createTrip = async (req, res) => {
             });
         }
 
-        // ── Build waypoints array ───────────────────────────────────────────────
-        // Accept a rich waypoints array from the client.
-        // Fall back to a 2-point array (from + to) for backward compat.
         let waypoints;
 
         if (Array.isArray(rawWaypoints) && rawWaypoints.length >= 2) {
             waypoints = rawWaypoints.map((wp, i) => ({
                 name: wp.name,
-                coordinates: [parseFloat(wp.lon), parseFloat(wp.lat)], // GeoJSON [lon, lat]
+                coordinates: [parseFloat(wp.lon), parseFloat(wp.lat)],
                 distanceFromStart: parseFloat(wp.distanceFromStart),
                 order: wp.order !== undefined ? wp.order : i,
             }));
         } else {
-            // Fallback: just origin and destination
             const fromLonF = parseFloat(fromLon);
             const fromLatF = parseFloat(fromLat);
             const toLonF = parseFloat(toLon);
@@ -142,10 +105,8 @@ const createTrip = async (req, res) => {
             ];
         }
 
-        // Sort waypoints by order to guarantee correct indexing
         waypoints.sort((a, b) => a.order - b.order);
 
-        // ── Create trip ─────────────────────────────────────────────────────────
         const trip = new Trip({
             driverId: req.user.userId,
             from,
@@ -166,7 +127,6 @@ const createTrip = async (req, res) => {
             maxDetourKm: maxDetourKm ? parseFloat(maxDetourKm) : 10,
             womenOnly: womenOnly || false,
             status: "upcoming",
-            // seats[] and farePerKm are auto-computed in the pre-save hook
         });
 
         await trip.save();
@@ -185,19 +145,6 @@ const createTrip = async (req, res) => {
     }
 };
 
-// ─── SEARCH TRIPS ─────────────────────────────────────────────────────────────
-/**
- * GET /trips/search
- *
- * Query params:
- *   from, to, date, passengers, womenOnly, maxPrice
- *   fromLat, fromLon, toLat, toLon  ← optional, enables radius matching
- *
- * When lat/lon are supplied, we use radius-based waypoint matching.
- * Otherwise we fall back to string-regex matching (backward compat).
- *
- * Returns trips with segment-aware seat counts.
- */
 const searchTrips = async (req, res) => {
     try {
         const { from, to, date, passengers, womenOnly, maxPrice } = req.query;
@@ -205,17 +152,15 @@ const searchTrips = async (req, res) => {
         const numPassengers = parseInt(passengers) || 1;
         const maxPriceValue = parseInt(maxPrice) || 100000;
 
-        // Build query
         const query = {
             status: "upcoming",
             totalSeats: { $gte: numPassengers },
             pricePerSeat: { $lte: maxPriceValue },
-        };
+        }; //
 
         if (date) query.departureDate = date;
         if (womenOnly === "true") query.womenOnly = true;
 
-        // Get all trips
         const trips = await Trip.find(query)
             .populate("driverId", "name rating profilePhoto isVerified")
             .sort({ departureDate: 1, departureTime: 1 });
@@ -223,35 +168,34 @@ const searchTrips = async (req, res) => {
         const results = [];
 
         for (const trip of trips) {
-            // Find if the trip has the requested from and to as waypoints
             let fromWp = null;
             let toWp = null;
 
+            // Find matching waypoints (exact match or includes)
             for (const wp of trip.waypoints) {
-                // Match from (case insensitive)
                 if (wp.name.toLowerCase() === from.toLowerCase() ||
                     wp.name.toLowerCase().includes(from.toLowerCase())) {
                     fromWp = wp;
                 }
-                // Match to
                 if (wp.name.toLowerCase() === to.toLowerCase() ||
                     wp.name.toLowerCase().includes(to.toLowerCase())) {
                     toWp = wp;
                 }
-            }
+            } // optimize this code
 
-            // Valid segment: from waypoint found, to waypoint found, and from comes before to
             if (fromWp && toWp && fromWp.order < toWp.order) {
-                // Calculate segment distance
                 const segmentDist = toWp.distanceFromStart - fromWp.distanceFromStart;
-
-                // Calculate prorated fare
+                
+                // FIXED: Ensure proper fare calculation with ₹3.5/km logic
                 let fare = trip.pricePerSeat;
-                if (trip.farePerKm && segmentDist > 0) {
-                    fare = Math.round((trip.farePerKm * segmentDist) / 10) * 10;
+                if (segmentDist > 0) {
+                    // Calculate using farePerKm if available, otherwise use pricePerSeat
+                    const ratePerKm = trip.farePerKm || (trip.pricePerSeat / trip.totalDistanceKm);
+                    const rawFare = ratePerKm * segmentDist;
+                    fare = Math.round(rawFare / 10) * 10;
                 }
 
-                // Check available seats for this segment
+                // Count available seats for this segment
                 let availableSeats = 0;
                 for (const seat of trip.seats) {
                     const hasBooking = seat.bookings.some(b =>
@@ -279,7 +223,7 @@ const searchTrips = async (req, res) => {
                         fullPrice: trip.pricePerSeat,
                         seatsLeft: availableSeats,
                         totalSeats: trip.totalSeats,
-                        distanceKm: segmentDist,
+                        distanceKm: parseFloat(segmentDist.toFixed(2)),
                         totalDistanceKm: trip.totalDistanceKm,
                         womenOnly: trip.womenOnly,
                         badge: trip.womenOnly ? "WOMEN ONLY" : undefined,
@@ -307,17 +251,6 @@ const searchTrips = async (req, res) => {
 };
 
 // ─── BOOK SEGMENT ─────────────────────────────────────────────────────────────
-/**
- * POST /trips/:id/book
- *
- * Body: { fromOrder, toOrder }
- *   fromOrder — waypoint index where passenger boards
- *   toOrder   — waypoint index where passenger alights
- *
- * Atomically allocates the first free seat for the requested segment.
- * Uses MongoDB's findOneAndUpdate to prevent race conditions between
- * concurrent booking requests.
- */
 const bookSegment = async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -330,7 +263,6 @@ const bookSegment = async (req, res) => {
         const fromOrder = parseInt(rawFrom);
         const toOrder = parseInt(rawTo);
 
-        // ── Validate IDs ────────────────────────────────────────────────────────
         if (!mongoose.Types.ObjectId.isValid(id)) {
             await session.abortTransaction();
             return res.status(400).json({ success: false, message: "Invalid trip ID" });
@@ -344,7 +276,6 @@ const bookSegment = async (req, res) => {
             });
         }
 
-        // ── Fetch trip ──────────────────────────────────────────────────────────
         const trip = await Trip.findById(id).session(session);
 
         if (!trip) {
@@ -360,7 +291,6 @@ const bookSegment = async (req, res) => {
             });
         }
 
-        // Driver cannot book their own trip
         if (trip.driverId.toString() === passengerId.toString()) {
             await session.abortTransaction();
             return res.status(403).json({
@@ -369,14 +299,12 @@ const bookSegment = async (req, res) => {
             });
         }
 
-        // ── Validate segment ────────────────────────────────────────────────────
         const segmentCheck = validateSegment(trip, fromOrder, toOrder);
         if (!segmentCheck.valid) {
             await session.abortTransaction();
             return res.status(400).json({ success: false, message: segmentCheck.message });
         }
 
-        // ── Find a free seat ────────────────────────────────────────────────────
         const freeSeat = findFreeSeat(trip, fromOrder, toOrder);
 
         if (!freeSeat) {
@@ -387,15 +315,11 @@ const bookSegment = async (req, res) => {
             });
         }
 
-        // ── Calculate fare ──────────────────────────────────────────────────────
         const { fare, distanceKm } = calculateSegmentFare(trip, fromOrder, toOrder);
 
         const fromWp = trip.waypoints.find((w) => w.order === fromOrder);
         const toWp = trip.waypoints.find((w) => w.order === toOrder);
 
-        // ── Atomic update: add booking to the specific seat ──────────────────────
-        // The $elemMatch condition re-checks seat availability inside the atomic
-        // update so two concurrent requests cannot claim the same seat.
         const bookingId = new mongoose.Types.ObjectId();
 
         const updatedTrip = await Trip.findOneAndUpdate(
@@ -436,7 +360,6 @@ const bookSegment = async (req, res) => {
         );
 
         if (!updatedTrip) {
-            // Another request grabbed the seat between findFreeSeat and the update
             await session.abortTransaction();
             return res.status(409).json({
                 success: false,
@@ -444,7 +367,6 @@ const bookSegment = async (req, res) => {
             });
         }
 
-        // ── Create Booking document ─────────────────────────────────────────────
         const booking = new Booking({
             _id: bookingId,
             tripId: trip._id,
@@ -523,12 +445,10 @@ const getMyTrips = async (req, res) => {
             return res.status(401).json({ success: false, message: "User not authenticated" });
         }
 
-        // Hosted trips
         const hostedTrips = await Trip.find({ driverId: userId })
             .populate("driverId", "name rating")
             .sort({ createdAt: -1 });
 
-        // Bookings as passenger
         const bookings = await Booking.find({ passengerId: userId })
             .populate({ path: "tripId", populate: { path: "driverId", select: "name rating" } })
             .sort({ createdAt: -1 });
@@ -565,31 +485,39 @@ const getMyTrips = async (req, res) => {
             waypoints: trip.waypoints,
         }));
 
-        const formattedGuest = bookings.map((booking) => ({
-            id: booking._id,
-            tripId: booking.tripId?._id,
-            route: `${booking.fromName} → ${booking.toName}`,
-            fullRoute: `${booking.tripId?.from || ""} → ${booking.tripId?.to || ""}`,
-            role: "GUEST",
-            date: new Date(booking.tripId?.departureDate || Date.now()).toLocaleDateString("en-IN", {
-                day: "numeric", month: "short", year: "numeric",
-            }),
-            time: booking.tripId?.departureTime || "",
-            status: getStatus(booking.tripId?.status, booking.tripId?.departureDate),
-            seatNumber: booking.seatNumber,
-            fromOrder: booking.fromOrder,
-            toOrder: booking.toOrder,
-            distanceKm: booking.distanceKm,
-            seats: { booked: 1, total: booking.tripId?.totalSeats || 0 },
-            amount: `₹${booking.fareCharged}`,
-            driver: booking.tripId?.driverId
-                ? {
-                    name: booking.tripId.driverId.name,
-                    avatar: (booking.tripId.driverId.name || "D").charAt(0).toUpperCase(),
-                    rating: booking.tripId.driverId.rating || 0,
-                }
-                : null,
-        }));
+        const formattedGuest = bookings.map((booking) => {
+            const fromName = booking.fromName || "";
+            const toName = booking.toName || "";
+
+            return {
+                id: booking.tripId?._id,
+                tripId: booking.tripId?._id,
+                bookingId: booking._id,
+                route: `${fromName} → ${toName}`,
+                fullRoute: `${booking.tripId?.from || ""} → ${booking.tripId?.to || ""}`,
+                role: "GUEST",
+                date: new Date(booking.tripId?.departureDate || Date.now()).toLocaleDateString("en-IN", {
+                    day: "numeric", month: "short", year: "numeric",
+                }),
+                time: booking.tripId?.departureTime || "",
+                status: getStatus(booking.tripId?.status, booking.tripId?.departureDate),
+                fromName: fromName,
+                toName: toName,
+                fromOrder: booking.fromOrder,
+                toOrder: booking.toOrder,
+                seatNumber: booking.seatNumber,
+                distanceKm: booking.distanceKm,
+                seats: { booked: 1, total: booking.tripId?.totalSeats || 0 },
+                amount: `₹${booking.fareCharged}`,
+                driver: booking.tripId?.driverId
+                    ? {
+                        name: booking.tripId.driverId.name,
+                        avatar: (booking.tripId.driverId.name || "D").charAt(0).toUpperCase(),
+                        rating: booking.tripId.driverId.rating || 0,
+                    }
+                    : null,
+            };
+        });
 
         return res.json({
             success: true,
@@ -693,12 +621,6 @@ const getDriverTrips = async (req, res) => {
 };
 
 // ─── GET SEAT MAP ─────────────────────────────────────────────────────────────
-/**
- * GET /trips/:id/seat-map?fromOrder=1&toOrder=4
- *
- * Returns the seat availability matrix for a trip and a given segment.
- * Useful for the frontend seat picker UI.
- */
 const getSeatMap = async (req, res) => {
     try {
         const { id } = req.params;
@@ -737,7 +659,6 @@ const getSeatMap = async (req, res) => {
             };
         });
 
-        // Also return prorated fare
         let fare = trip.pricePerSeat;
         let distanceKm = trip.totalDistanceKm;
         try {

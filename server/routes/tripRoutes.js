@@ -17,19 +17,27 @@ const { createTripSchema } = require("../validation/tripValidation");
 
 const router = Router();
 
+// ── CRITICAL: specific routes MUST come before /:id wildcard ─────────────────
+// If /my-trips/all is placed after /:id, Express matches it as id="my-trips"
+// and getTripById runs instead of getMyTrips — causing a silent 404/error.
+
 // ── Public routes ─────────────────────────────────────────────────────────────
 router.get("/search",       searchTrips);   // GET /trips/search
 router.get("/:id/seat-map", getSeatMap);    // GET /trips/:id/seat-map?fromOrder=1&toOrder=4
-router.get("/:id",          getTripById);   // GET /trips/:id
 
-// ── Protected routes ──────────────────────────────────────────────────────────
+// ── Protected routes (specific paths before wildcard) ─────────────────────────
 router.use(authMiddleware);
 
-router.post("/",                    Validate(createTripSchema), createTrip);   // POST /trips
-router.post("/:id/book",            bookSegment);                              // POST /trips/:id/book
-router.get("/my-trips/all",         getMyTrips);                               // GET  /trips/my-trips/all
-router.get("/driver/:driverId",     getDriverTrips);                           // GET  /trips/driver/:driverId
-router.put("/:id",                  updateTrip);                               // PUT  /trips/:id
-router.put("/:id/cancel",           cancelTrip);                               // PUT  /trips/:id/cancel
+// FIX: /my-trips/all MUST be before /:id
+router.get("/my-trips/all",         getMyTrips);      // GET  /trips/my-trips/all
+router.get("/driver/:driverId",     getDriverTrips);  // GET  /trips/driver/:driverId
+
+// Wildcard last
+router.get("/:id",                  getTripById);     // GET  /trips/:id
+
+router.post("/",                    Validate(createTripSchema), createTrip);
+router.post("/:id/book",            bookSegment);
+router.put("/:id",                  updateTrip);
+router.put("/:id/cancel",           cancelTrip);
 
 module.exports = router;
