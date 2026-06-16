@@ -20,7 +20,7 @@ const DisputeSchema = new mongoose.Schema(
       required: true,
     },
     description: { type: String, required: true },
-    evidence: [{ type: String, default: [] }], // Cloudinary URLs
+    evidence: [{ type: String, default: [] }],
     status: {
       type: String,
       enum: ["open", "under_review", "resolved", "dismissed"],
@@ -38,9 +38,12 @@ const DisputeSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Indexes for faster queries
+// Indexes
 DisputeSchema.index({ tripId: 1 });
 DisputeSchema.index({ raisedBy: 1, createdAt: -1 });
 DisputeSchema.index({ status: 1, createdAt: -1 });
+DisputeSchema.index({ status: 1, resolvedAt: 1 });        // For resolution time analytics
+DisputeSchema.index({ reason: 1, createdAt: 1 });          // For dispute type trends
+DisputeSchema.index({ createdAt: -1 });                    // For default sorting
 
 module.exports = mongoose.model("Dispute", DisputeSchema);

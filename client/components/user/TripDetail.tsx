@@ -57,6 +57,7 @@ interface TripData {
   totalDistanceKm?: number
   farePerKm?: number
   waypoints?: Waypoint[]
+  vehicleInfo?: string  // 👈 ADDED
   driverId: {
     _id: string
     name: string
@@ -471,18 +472,28 @@ export default function TripDetailsPage() {
             )}
           </div>
 
-          {/* Vehicle & Amenities */}
+          {/* 👇 VEHICLE & AMENITIES - UPDATED WITH TRIP VEHICLE INFO */}
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
             <h2 className="font-semibold text-gray-900 mb-4">Vehicle & Amenities</h2>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
-                <Car size={22} className="text-gray-600" />
+            
+            {/* Show actual vehicle info from trip if available */}
+            {trip.vehicleInfo ? (
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4">
+                <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">🚗 Vehicle</p>
+                <p className="text-sm font-semibold text-gray-800">{trip.vehicleInfo}</p>
               </div>
-              <div>
-                <p className="font-semibold text-gray-900 text-sm">{car.name} · {car.variant}</p>
-                <p className="text-xs text-gray-400">{car.type} · {plate}</p>
+            ) : (
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center">
+                  <Car size={22} className="text-gray-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900 text-sm">{car.name} · {car.variant}</p>
+                  <p className="text-xs text-gray-400">{car.type} · {plate}</p>
+                </div>
               </div>
-            </div>
+            )}
+
             <div className="grid grid-cols-3 gap-2">
               {['❄️ AC', '🎵 Music', '⚡ USB Charging', '🧳 Luggage OK', '🐾 No Pets', '🚭 No Smoking'].map(item => (
                 <div key={item} className="flex items-center gap-1.5 bg-gray-50 rounded-lg px-2.5 py-2">

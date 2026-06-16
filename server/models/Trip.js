@@ -49,12 +49,17 @@ const TripSchema = new mongoose.Schema(
     totalDistanceKm: { type: Number, default: 0 },
     farePerKm: { type: Number, default: 0 },
     seatsAvailable: { type: Number, default: 0 },
+    // models/Trip.js - Add this field
+    vehicleInfo: {
+      type: String,
+      default: ""
+    },
   },
   { timestamps: true }
 );
 
 TripSchema.pre("save", function () {
-  
+
   if (this.isNew && this.seats.length === 0 && this.totalSeats > 0) {
     this.seats = Array.from({ length: this.totalSeats }, (_, i) => ({
       seatNumber: i + 1,
@@ -62,7 +67,7 @@ TripSchema.pre("save", function () {
     }));
   }
 
-  
+
   if (this.waypoints && this.waypoints.length >= 2) {
     const totalDist = this.waypoints[this.waypoints.length - 1].distanceFromStart;
     this.totalDistanceKm = totalDist;

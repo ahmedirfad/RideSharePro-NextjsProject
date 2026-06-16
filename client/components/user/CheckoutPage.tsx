@@ -121,12 +121,18 @@ function TripSummary({ trip, fromName, toName, seatNumber, distanceKm }: {
           </div>
         </div>
 
-        {/* Vehicle */}
+        {/* 👇 VEHICLE - Show actual vehicle info from trip */}
         <div className="flex items-center gap-2.5">
           <Car size={13} className="text-gray-400 shrink-0" />
-          <p className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full font-medium">
-            Standard Sedan · Clean & Comfortable
-          </p>
+          {trip.vehicleInfo ? (
+            <p className="text-xs text-gray-700 bg-blue-50 px-2.5 py-1 rounded-full font-medium border border-blue-100">
+              {trip.vehicleInfo}
+            </p>
+          ) : (
+            <p className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full font-medium">
+              Standard Sedan · Clean & Comfortable
+            </p>
+          )}
         </div>
       </div>
     </SectionCard>
@@ -349,6 +355,9 @@ function ConfirmationScreen({ bookingId, trip, fromName, toName, seatNumber, far
           <div className="flex justify-between text-gray-600"><span>Seat</span><span className="font-semibold text-gray-900">Seat {seatNumber}</span></div>
           <div className="flex justify-between text-gray-600"><span>Date</span><span className="font-semibold text-gray-900">{formatDate(trip?.departureDate)} · {trip?.departureTime}</span></div>
           <div className="flex justify-between text-gray-600"><span>Driver</span><span className="font-semibold text-gray-900">{trip?.driverId?.name}</span></div>
+          {trip?.vehicleInfo && (
+            <div className="flex justify-between text-gray-600"><span>Vehicle</span><span className="font-semibold text-gray-900">{trip.vehicleInfo}</span></div>
+          )}
           <div className="flex justify-between border-t border-gray-100 pt-2.5"><span className="font-bold text-gray-900">Paid</span><span className="font-black text-blue-600">₹{fare}</span></div>
         </div>
       </div>
@@ -647,6 +656,11 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
                       <span className="truncate">{toName}</span>
                     </div>
                     <p className="text-[10px] text-center text-gray-400 mt-2">Seat {seatNumber}</p>
+                    {trip?.vehicleInfo && (
+                      <p className="text-[10px] text-center text-gray-500 mt-1 flex items-center justify-center gap-1">
+                        <Car size={10} className="text-gray-400" /> {trip.vehicleInfo}
+                      </p>
+                    )}
                   </div>
                 </SectionCard>
               </div>

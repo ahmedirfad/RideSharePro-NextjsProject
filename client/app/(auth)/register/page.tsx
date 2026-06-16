@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Car, Shield, Zap, Star, CheckCircle, ArrowRight } from 'lucide-react'
+import { withoutAuth } from '@/components/hoc'
 import RegisterForm from '@/components/auth/RegisterForm'
 
-export default function RegisterPage() {
+function RegisterPage() {
   const [scrolled, setScrolled] = useState(false)
 
   useEffect(() => {
@@ -137,3 +138,5 @@ export default function RegisterPage() {
     </div>
   )
 }
+
+export default withoutAuth(RegisterPage)

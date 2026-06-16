@@ -4,8 +4,12 @@ const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const dotenv = require("dotenv");
 const connectDB = require("./config/db");
+const adminRoutes = require("./routes/admin/adminRoutes");
 const authRoutes = require("./routes/authRoutes");
 const tripRoutes = require("./routes/tripRoutes");
+const bookingRoutes = require("./routes/bookingRoutes");
+const reviewRoutes = require("./routes/reviewRoutes");
+const disputeRoutes = require("./routes/disputeRoutes");  // ← Add this
 
 dotenv.config();
 
@@ -24,8 +28,12 @@ app.use(express.json());
 app.use(cookieParser());
 
 // Routes
+app.use("/api/admin", adminRoutes);
 app.use("/api/auth", authRoutes);
-app.use("/api/trips", tripRoutes);  // Make sure this line exists
+app.use("/api/trips", tripRoutes);
+app.use("/api/bookings", bookingRoutes);
+app.use("/api/reviews", reviewRoutes);
+app.use("/api/disputes", disputeRoutes);  // ← Add this
 
 app.get("/health", (req, res) => {
   res.json({ message: "Server is running" });

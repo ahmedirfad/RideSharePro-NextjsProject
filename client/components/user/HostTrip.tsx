@@ -5,7 +5,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import {
-  Minus, Plus, Fuel, TrendingUp, MapPin, CheckCircle2, ChevronRight, Loader2, X, PlusCircle,
+  Minus, Plus, Fuel, TrendingUp, MapPin, CheckCircle2, ChevronRight, Loader2, X, PlusCircle, Car,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
@@ -377,6 +377,7 @@ export default function HostTrip() {
   const [price, setPrice] = useState(0)
   const [detour, setDetour] = useState(5)
   const [womenOnly, setWomenOnly] = useState(false)
+  const [vehicleInfo, setVehicleInfo] = useState('') // 👈 NEW STATE
   const [posting, setPosting] = useState(false)
   const [posted, setPosted] = useState(false)
   const [error, setError] = useState('')
@@ -599,7 +600,8 @@ export default function HostTrip() {
         maxDetourKm: detour,
         womenOnly,
         waypoints: waypointsArray,
-        totalDistanceKm: parseFloat(totalDistance.toFixed(2))
+        totalDistanceKm: parseFloat(totalDistance.toFixed(2)),
+        vehicleInfo: vehicleInfo // 👈 ADDED VEHICLE INFO
       }
 
       const response = await api.post('/trips', tripData)
@@ -798,6 +800,26 @@ export default function HostTrip() {
                 className={`relative w-11 h-6 rounded-full transition-colors ${womenOnly ? 'bg-blue-600' : 'bg-gray-200'}`}>
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${womenOnly ? 'translate-x-5' : 'translate-x-0'}`} />
               </button>
+            </div>
+          </div>
+
+          {/* ── Vehicle Details ── */}
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 space-y-4">
+            <h2 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
+              <Car size={16} className="text-gray-500" /> Vehicle Details
+            </h2>
+            <div>
+              <label className="text-xs text-gray-500 mb-2 block">Your Vehicle (for this trip)</label>
+              <input
+                type="text"
+                value={vehicleInfo}
+                onChange={(e) => setVehicleInfo(e.target.value)}
+                placeholder="e.g. Toyota Innova - White - KA-01-AB-1234"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+              />
+              <p className="text-[10px] text-gray-400 mt-1.5">
+                This will be shown to passengers when they book your ride
+              </p>
             </div>
           </div>
 

@@ -2,16 +2,15 @@
 
 import { ReactNode, useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Calendar, Wallet, User,
   Settings, HelpCircle, Car, Search, Bell, LogOut,
-  ChevronDown, Menu, X, Star, Shield, MessageSquare,
+  ChevronDown, Menu, X, Star, Shield, MessageSquare, Loader2,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import api from '@/lib/api'
 
-// Nav items — removed duplicate "Post Trip"
 const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard',   href: '/dashboard' },
   { icon: Car,             label: 'Host a Ride',  href: '/host' },
@@ -39,26 +38,39 @@ const MESSAGES = [
 
 export default function UserLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname()
-  const { logout, user, isAuthenticated } = useAuthStore()
+  const router = useRouter()
+  const { logout, user, isAuthenticated, _hasHydrated } = useAuthStore()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [msgOpen, setMsgOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
   const [userData, setUserData] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  
+  const [isChecking, setIsChecking] = useState(true)
+
   const notifRef = useRef<HTMLDivElement>(null)
   const msgRef = useRef<HTMLDivElement>(null)
   const userRef = useRef<HTMLDivElement>(null)
 
-  // Fetch real user data
+  // Check authentication FIRST - redirect before rendering anything
   useEffect(() => {
+    const token = localStorage.getItem('accessToken')
+    
+    if (!_hasHydrated) {
+      return
+    }
+    
+    if (!token && !isAuthenticated) {
+      router.replace('/login')
+    } else {
+      setIsChecking(false)
+    }
+  }, [_hasHydrated, isAuthenticated, router])
+
+  // Fetch user data only if authenticated
+  useEffect(() => {
+    if (isChecking) return
+    
     const fetchUserData = async () => {
-      if (!isAuthenticated) {
-        setLoading(false)
-        return
-      }
-      
       try {
         const response = await api.get('/auth/me')
         if (response.data.success) {
@@ -66,13 +78,11 @@ export default function UserLayout({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.error('Failed to fetch user data', error)
-      } finally {
-        setLoading(false)
       }
     }
     
     fetchUserData()
-  }, [isAuthenticated])
+  }, [isChecking])
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -86,43 +96,32 @@ export default function UserLayout({ children }: { children: ReactNode }) {
 
   const totalUnread = NOTIFICATIONS.filter(n => n.unread).length + MESSAGES.filter(m => m.unread).length
 
-  // Get user initials for avatar
   const getUserInitials = () => {
     const name = userData?.name || user?.name || 'User'
     return name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
   }
 
-  // Get user display name
   const getUserName = () => {
     return userData?.name || user?.name || 'Guest'
   }
 
-  // Get user email
   const getUserEmail = () => {
     return userData?.email || user?.email || 'guest@example.com'
   }
 
-  if (loading) {
+  // Show loading while checking auth - DON'T RENDER ANYTHING ELSE
+  if (!_hasHydrated || isChecking) {
     return (
-      <div className="min-h-screen bg-[#f5f7fa]">
-        <header className="bg-white border-b border-gray-100 sticky top-0 z-40 shadow-sm">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6">
-            <div className="flex items-center justify-between h-[60px]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center">
-                  <Car size={15} color="white" />
-                </div>
-                <span className="font-bold text-[17px] text-gray-900">RideShare<span className="text-blue-600">Pro</span></span>
-              </div>
-              <div className="w-32 h-8 bg-gray-100 rounded-lg animate-pulse" />
-            </div>
-          </div>
-        </header>
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 py-7">
-          {children}
-        </main>
+      <div className="min-h-screen bg-[#f5f7fa] flex items-center justify-center">
+        <Loader2 size={40} className="text-blue-500 animate-spin" />
       </div>
     )
+  }
+
+  // Double-check: if no token, don't render anything
+  const hasToken = typeof window !== 'undefined' && localStorage.getItem('accessToken')
+  if (!hasToken && !isAuthenticated) {
+    return null
   }
 
   return (
@@ -273,7 +272,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                 )}
               </div>
 
-              {/* User Menu — Real user data */}
+              {/* User Menu */}
               <div ref={userRef} className="relative shrink-0">
                 <button
                   onClick={() => { setUserOpen(!userOpen); setNotifOpen(false); setMsgOpen(false) }}
@@ -299,8 +298,20 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                       </Link>
                     ))}
                     <div className="border-t border-gray-100">
-                      <button onClick={logout}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition w-full">
+                      {/* ✅ UPDATED LOGOUT BUTTON */}
+                      <button 
+                        onClick={async () => {
+                          try {
+                            await api.post('/auth/logout')
+                          } catch (error) {
+                            console.error('Logout error:', error)
+                          }
+                          logout()
+                          localStorage.removeItem('accessToken')
+                          router.replace('/login')
+                        }}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition w-full"
+                      >
                         <LogOut size={15} />
                         Logout
                       </button>
@@ -333,7 +344,6 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                 </Link>
               )
             })}
-            {/* Messages in mobile menu */}
             <Link href="/messages" onClick={() => setMobileOpen(false)}
               className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition">
               <MessageSquare size={16} />

@@ -1,3 +1,5 @@
+'use client'
+import { withAuth } from '@/components/hoc'
 import SettingsPage from '@/components/user/SettingsPage'
 
 export const metadata = {
@@ -5,6 +7,4 @@ export const metadata = {
   description: 'Manage your account settings, notifications, and preferences',
 }
 
-export default function SettingsRoute() {
-  return <SettingsPage />
-}
+export default withAuth(SettingsPage)

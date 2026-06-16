@@ -38,6 +38,25 @@ const BookingSchema = new mongoose.Schema(
       enum: ["pending", "confirmed", "cancelled", "completed"],
       default: "confirmed",
     },
+
+    // ✅ NEW — Payment & Escrow tracking
+    paymentStatus: {
+      type: String,
+      enum: ["pending", "paid", "failed", "refunded", "partially_refunded"],
+      default: "paid",
+    },
+    escrowStatus: {
+      type: String,
+      enum: ["held", "released", "disputed", "refunded"],
+      default: "held",
+    },
+    escrowReleasedAt: { type: Date, default: null },
+
+    // ✅ NEW — Refund tracking
+    refundAmount: { type: Number, default: 0 },
+    refundReason: { type: String, default: "" },
+    refundedAt: { type: Date, default: null },
+    refundedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   },
   { timestamps: true }
 );
@@ -51,5 +70,7 @@ BookingSchema.pre("save", function () {
 
 BookingSchema.index({ tripId: 1, passengerId: 1 });
 BookingSchema.index({ passengerId: 1, status: 1 });
+BookingSchema.index({ escrowStatus: 1 });
+BookingSchema.index({ paymentStatus: 1 });
 
 module.exports = mongoose.model("Booking", BookingSchema);

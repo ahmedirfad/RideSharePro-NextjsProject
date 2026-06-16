@@ -1,10 +1,5 @@
-import ProtectedRoute from '@/components/ProtectedRoute'
+'use client'
+import { withAuth } from '@/components/hoc'
 import ProfilePage from '@/components/user/ProfilePage'
 
-export default function Profile() {
-  return (
-    <ProtectedRoute>
-      <ProfilePage />
-    </ProtectedRoute>
-  )
-}
+export default withAuth(ProfilePage)

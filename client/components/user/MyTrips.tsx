@@ -41,6 +41,7 @@ interface Trip {
   canReview?: boolean
   canTrack?: boolean
   tripId?: string
+  vehicleInfo?: string  // 👈 ADDED
 }
 
 const statusConfig = {
@@ -119,6 +120,7 @@ export default function MyTrips() {
             driver:      trip.driver,
             canReview:   trip.canReview,
             canTrack:    trip.status === 'ONGOING',
+            vehicleInfo: trip.vehicleInfo || '',  // 👈 ADDED
           }
         })
         
@@ -446,6 +448,14 @@ export default function MyTrips() {
                     <span>{trip.time}</span>
                   </div>
                 </div>
+
+                {/* 👇 VEHICLE INFO */}
+                {trip.vehicleInfo && (
+                  <div className="mb-3 flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-1.5 border border-gray-100">
+                    <Car size={13} className="text-gray-400" />
+                    <span className="font-medium text-gray-600">{trip.vehicleInfo}</span>
+                  </div>
+                )}
 
                 {/* Trip Details */}
                 <div className="flex flex-wrap justify-between items-end gap-3">

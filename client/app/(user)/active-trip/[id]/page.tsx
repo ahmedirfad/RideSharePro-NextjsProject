@@ -1,9 +1,10 @@
+'use client'
+
+import { withAuth } from '@/components/hoc'
 import ActiveTrip from '@/components/user/ActiveTrip'
 
-export const metadata = {
-  title: 'Active Trip — RideSharePro',
-}
-
-export default function ActiveTripPage() {
+function ActiveTripPage() {
   return <ActiveTrip />
 }
+
+export default withAuth(ActiveTripPage)

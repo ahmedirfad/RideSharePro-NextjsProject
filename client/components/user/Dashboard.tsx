@@ -187,7 +187,7 @@ export default function Dashboard() {
       console.error('Failed to fetch dashboard data', error)
       if (error.response?.status === 401) {
         logout()
-        router.push('/login')
+        router.replace('/login')
       }
       setError('Failed to load dashboard')
     } finally {

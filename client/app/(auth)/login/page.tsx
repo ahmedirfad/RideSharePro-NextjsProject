@@ -3,9 +3,10 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Car, Shield, Star, ArrowRight, ChevronRight } from 'lucide-react'
+import { withoutAuth } from '@/components/hoc'
 import LoginForm from '@/components/auth/LoginForm'
 
-export default function LoginPage() {
+function LoginPage() {
   const [scrolled, setScrolled] = useState(false)
 
   useEffect(() => {
@@ -136,3 +137,5 @@ export default function LoginPage() {
     </div>
   )
 }
+
+export default withoutAuth(LoginPage)

@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import {
     Search, SlidersHorizontal, Star, Users, Car,
     MapPin, Calendar, User, ArrowRight, ArrowLeftRight,
-    RotateCcw, ShieldCheck, AlertCircle, Loader2, ChevronDown
+    RotateCcw, ShieldCheck, AlertCircle, Loader2, ChevronDown,
 } from 'lucide-react'
 import api from '@/lib/api'
 
@@ -51,6 +51,7 @@ interface Trip {
     fromWaypointName: string
     toWaypointName: string
     waypoints: Waypoint[]
+    vehicleInfo?: string  // 👈 ADDED
 }
 
 const DEPARTURE_TIMES = ['Morning', 'Afternoon', 'Evening', 'Night']
@@ -223,19 +224,19 @@ function FilterSidebar({ filters, setFilters, onReset }: { filters: any; setFilt
     )
 }
 
-function TripCard({ trip, searchFrom, searchTo, searchDate }: { 
+function TripCard({ trip, searchFrom, searchTo, searchDate }: {
     trip: Trip
     searchFrom: string
     searchTo: string
     searchDate: string
 }) {
     const [showWaypoints, setShowWaypoints] = useState(false)
-    
+
     const formatDate = (dateStr: string) => {
         const date = new Date(dateStr)
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     }
-    
+
     const parseTime = (timeStr: string) => {
         const [hour, minute] = timeStr.split(':')
         const h = parseInt(hour)
@@ -278,7 +279,7 @@ function TripCard({ trip, searchFrom, searchTo, searchDate }: {
                                     <Star size={11} fill="currentColor" /> {trip.rating}
                                 </span>
                             </div>
-                            
+
                             <div className="mt-2">
                                 <div className="flex items-center gap-2 text-sm">
                                     <span className="font-semibold text-gray-900">{trip.fromWaypointName || trip.from}</span>
@@ -289,10 +290,18 @@ function TripCard({ trip, searchFrom, searchTo, searchDate }: {
                                     Full route: {trip.fullFrom} → {trip.fullTo}
                                 </p>
                             </div>
-                            
+
+                            {/* 👇 VEHICLE INFO */}
+                            {trip.vehicleInfo && (
+                                <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+                                    <Car size={13} className="text-gray-400" />
+                                    <span className="font-medium text-gray-600">{trip.vehicleInfo}</span>
+                                </div>
+                            )}
+
                             {trip.waypoints && trip.waypoints.length > 2 && (
                                 <div className="mt-2">
-                                    <button 
+                                    <button
                                         onClick={() => setShowWaypoints(!showWaypoints)}
                                         className="flex items-center gap-1 text-[10px] text-blue-500 hover:text-blue-600"
                                     >
@@ -302,11 +311,10 @@ function TripCard({ trip, searchFrom, searchTo, searchDate }: {
                                     {showWaypoints && (
                                         <div className="mt-2 flex flex-wrap gap-1">
                                             {trip.waypoints.map((wp, idx) => (
-                                                <span key={idx} className={`text-[9px] px-2 py-0.5 rounded-full ${
-                                                    wp.order === trip.fromOrder ? 'bg-green-100 text-green-700' :
-                                                    wp.order === trip.toOrder ? 'bg-red-100 text-red-700' :
-                                                    'bg-gray-100 text-gray-500'
-                                                }`}>
+                                                <span key={idx} className={`text-[9px] px-2 py-0.5 rounded-full ${wp.order === trip.fromOrder ? 'bg-green-100 text-green-700' :
+                                                        wp.order === trip.toOrder ? 'bg-red-100 text-red-700' :
+                                                            'bg-gray-100 text-gray-500'
+                                                    }`}>
                                                     {wp.name}
                                                     {wp.order === trip.fromOrder && ' (Board)'}
                                                     {wp.order === trip.toOrder && ' (Alight)'}
@@ -316,7 +324,7 @@ function TripCard({ trip, searchFrom, searchTo, searchDate }: {
                                     )}
                                 </div>
                             )}
-                            
+
                             <div className="flex items-center gap-3 mt-3">
                                 <div className="text-center">
                                     <p className="text-sm font-bold text-gray-900">
@@ -336,7 +344,7 @@ function TripCard({ trip, searchFrom, searchTo, searchDate }: {
                                     <span className="text-[10px] text-gray-400">of {trip.totalDistanceKm} km</span>
                                 </div>
                             </div>
-                            
+
                             <div className="flex items-center gap-3 mt-2 flex-wrap">
                                 <span className="flex items-center gap-1 text-xs text-gray-500">
                                     <Users size={12} /> {trip.seatsLeft} seats left
@@ -398,7 +406,7 @@ export default function FindARidePage() {
         const tempTo = to
         setFrom(tempTo)
         setTo(tempFrom)
-        
+
         if (searched) {
             setTimeout(() => {
                 performSearch(filters, true)
@@ -424,12 +432,12 @@ export default function FindARidePage() {
         }
 
         try {
-            const params = new URLSearchParams({ 
-                from, 
-                to, 
-                passengers: passengers.toString(), 
-                maxPrice: currentFilters.maxPrice.toString(), 
-                womenOnly: currentFilters.womenOnly.toString() 
+            const params = new URLSearchParams({
+                from,
+                to,
+                passengers: passengers.toString(),
+                maxPrice: currentFilters.maxPrice.toString(),
+                womenOnly: currentFilters.womenOnly.toString()
             })
             if (date) params.append('date', date)
             const response = await api.get(`/trips/search?${params}`)
@@ -492,7 +500,7 @@ export default function FindARidePage() {
             }, 100)
         }
     }, [])
-
+    
     const displayed = showAll ? trips : trips.slice(0, 4)
 
     return (
@@ -503,7 +511,7 @@ export default function FindARidePage() {
                         <label className="text-xs text-gray-500 mb-1 block">From</label>
                         <LocationInput value={from} onChange={setFrom} placeholder="Enter origin city" icon={<span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />} />
                     </div>
-                    
+
                     {/* Swap Button */}
                     <div className="mb-1">
                         <button
@@ -515,12 +523,12 @@ export default function FindARidePage() {
                             <ArrowLeftRight size={16} />
                         </button>
                     </div>
-                    
+
                     <div>
                         <label className="text-xs text-gray-500 mb-1 block">To</label>
                         <LocationInput value={to} onChange={setTo} placeholder="Enter destination city" icon={<span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />} />
                     </div>
-                    
+
                     <div>
                         <label className="text-xs text-gray-500 mb-1 block">Date</label>
                         <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2.5 focus-within:ring-2 focus-within:ring-blue-500 transition">
@@ -530,7 +538,7 @@ export default function FindARidePage() {
                                 className="text-sm text-gray-700 outline-none bg-transparent" />
                         </div>
                     </div>
-                    
+
                     <div>
                         <label className="text-xs text-gray-500 mb-1 block">Passengers</label>
                         <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2.5 focus-within:ring-2 focus-within:ring-blue-500 transition">
@@ -541,7 +549,7 @@ export default function FindARidePage() {
                             </select>
                         </div>
                     </div>
-                    
+
                     <button onClick={handleSearch} disabled={loading}
                         className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-semibold rounded-lg transition h-[42px]">
                         {loading ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
@@ -582,12 +590,12 @@ export default function FindARidePage() {
                         </div>
                     ) : displayed.length > 0 ? (
                         displayed.map(trip => (
-                            <TripCard 
-                                key={trip.id} 
-                                trip={trip} 
-                                searchFrom={from} 
-                                searchTo={to} 
-                                searchDate={date} 
+                            <TripCard
+                                key={trip.id}
+                                trip={trip}
+                                searchFrom={from}
+                                searchTo={to}
+                                searchDate={date}
                             />
                         ))
                     ) : (

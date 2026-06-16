@@ -1,10 +1,5 @@
-import ProtectedRoute from '@/components/ProtectedRoute'
+'use client'
+import { withAuth } from '@/components/hoc'
 import MyTrips from '@/components/user/MyTrips'
 
-export default function MyTripsPage() {
-  return (
-    <ProtectedRoute>
-      <MyTrips />
-    </ProtectedRoute>
-  )
-}
+export default withAuth(MyTrips)

@@ -56,6 +56,7 @@ const createTrip = async (req, res) => {
             totalSeats, pricePerSeat,
             maxDetourKm, womenOnly,
             waypoints: rawWaypoints,
+            vehicleInfo, // 👈 ADDED
         } = req.body;
 
         if (!from || !to || !departureDate || !departureTime || !totalSeats || !pricePerSeat) {
@@ -126,6 +127,7 @@ const createTrip = async (req, res) => {
             pricePerSeat: parseFloat(pricePerSeat),
             maxDetourKm: maxDetourKm ? parseFloat(maxDetourKm) : 10,
             womenOnly: womenOnly || false,
+            vehicleInfo: vehicleInfo || "", // 👈 ADDED
             status: "upcoming",
         });
 
@@ -156,7 +158,7 @@ const searchTrips = async (req, res) => {
             status: "upcoming",
             totalSeats: { $gte: numPassengers },
             pricePerSeat: { $lte: maxPriceValue },
-        }; //
+        };
 
         if (date) query.departureDate = date;
         if (womenOnly === "true") query.womenOnly = true;
@@ -171,7 +173,6 @@ const searchTrips = async (req, res) => {
             let fromWp = null;
             let toWp = null;
 
-            // Find matching waypoints (exact match or includes)
             for (const wp of trip.waypoints) {
                 if (wp.name.toLowerCase() === from.toLowerCase() ||
                     wp.name.toLowerCase().includes(from.toLowerCase())) {
@@ -181,21 +182,18 @@ const searchTrips = async (req, res) => {
                     wp.name.toLowerCase().includes(to.toLowerCase())) {
                     toWp = wp;
                 }
-            } // optimize this code
+            }
 
             if (fromWp && toWp && fromWp.order < toWp.order) {
                 const segmentDist = toWp.distanceFromStart - fromWp.distanceFromStart;
                 
-                // FIXED: Ensure proper fare calculation with ₹3.5/km logic
                 let fare = trip.pricePerSeat;
                 if (segmentDist > 0) {
-                    // Calculate using farePerKm if available, otherwise use pricePerSeat
                     const ratePerKm = trip.farePerKm || (trip.pricePerSeat / trip.totalDistanceKm);
                     const rawFare = ratePerKm * segmentDist;
                     fare = Math.round(rawFare / 10) * 10;
                 }
 
-                // Count available seats for this segment
                 let availableSeats = 0;
                 for (const seat of trip.seats) {
                     const hasBooking = seat.bookings.some(b =>
@@ -229,6 +227,7 @@ const searchTrips = async (req, res) => {
                         badge: trip.womenOnly ? "WOMEN ONLY" : undefined,
                         fromOrder: fromWp.order,
                         toOrder: toWp.order,
+                        vehicleInfo: trip.vehicleInfo || "", // 👈 ADDED - show vehicle in search results
                         waypoints: trip.waypoints.map(w => ({
                             name: w.name,
                             order: w.order,
@@ -397,6 +396,7 @@ const bookSegment = async (req, res) => {
                 distanceKm,
                 fareCharged: fare,
                 status: "confirmed",
+                vehicleInfo: trip.vehicleInfo || "", // 👈 ADDED - show vehicle in booking confirmation
             },
         });
     } catch (error) {
@@ -482,6 +482,7 @@ const getMyTrips = async (req, res) => {
                         }, 0);
                 }, 0)
                 : (trip.totalSeats - trip.seatsAvailable) * trip.pricePerSeat}`,
+            vehicleInfo: trip.vehicleInfo || "", // 👈 ADDED
             waypoints: trip.waypoints,
         }));
 
@@ -509,6 +510,7 @@ const getMyTrips = async (req, res) => {
                 distanceKm: booking.distanceKm,
                 seats: { booked: 1, total: booking.tripId?.totalSeats || 0 },
                 amount: `₹${booking.fareCharged}`,
+                vehicleInfo: booking.tripId?.vehicleInfo || "", // 👈 ADDED - show vehicle in guest trips
                 driver: booking.tripId?.driverId
                     ? {
                         name: booking.tripId.driverId.name,
@@ -674,6 +676,7 @@ const getSeatMap = async (req, res) => {
                 seatMap,
                 fare,
                 distanceKm,
+                vehicleInfo: trip.vehicleInfo || "", // 👈 ADDED - show vehicle in seat map
                 waypoints: trip.waypoints,
                 freeCount: seatMap.filter((s) => s.available).length,
             },

@@ -1,10 +1,5 @@
-import ProtectedRoute from '@/components/ProtectedRoute'
+'use client'
+import { withAuth } from '@/components/hoc'
 import Dashboard from '@/components/user/Dashboard'
 
-export default function Home() {
-  return (
-    <ProtectedRoute>
-      <Dashboard />
-    </ProtectedRoute>
-  )
-}
+export default withAuth(Dashboard)
