@@ -2,29 +2,6 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const User = require("../../models/User");
 
-// ─────────────────────────────────────────────────────────────
-// GET /api/admin/users
-//
-// Query params:
-//   search    — matches name / email / phone (regex, case-insensitive)
-//   role      — 'driver' | 'passenger' | 'admin' | 'all'
-//   status    — 'active' | 'unverified' | 'suspended' | 'all'
-//   dateFrom  — ISO date string (createdAt >=)
-//   dateTo    — ISO date string (createdAt <=)
-//   page, limit
-//
-// Role is DERIVED:
-//   - 'admin'   if user.role === 'admin'
-//   - 'driver'  if user has hosted at least 1 trip
-//   - 'passenger' otherwise
-//
-// Status is DERIVED:
-//   - 'suspended'  if isSuspended === true
-//   - 'unverified' if isEmailVerified === false
-//   - 'active'     otherwise
-//
-// Trips = hosted trips + bookings as passenger
-// ─────────────────────────────────────────────────────────────
 const getUsers = async (req, res) => {
   try {
     const {
@@ -40,7 +17,6 @@ const getUsers = async (req, res) => {
     const pageNum = Math.max(parseInt(page) || 1, 1);
     const limitNum = Math.min(Math.max(parseInt(limit) || 10, 1), 100);
 
-    // ── Pre-lookup match ────────────────────────────────────
     const matchStage = {};
 
     if (search.trim()) {
@@ -60,7 +36,6 @@ const getUsers = async (req, res) => {
 
     const pipeline = [{ $match: matchStage }];
 
-    // ── Join hosted trips + bookings to derive role & trip count ──
     pipeline.push(
       {
         $lookup: {
@@ -88,13 +63,7 @@ const getUsers = async (req, res) => {
             $cond: [
               { $eq: ["$role", "admin"] },
               "ADMIN",
-              {
-                $cond: [
-                  { $gt: [{ $size: "$hostedTrips" }, 0] },
-                  "DRIVER",
-                  "PASSENGER",
-                ],
-              },
+              "USER",
             ],
           },
           computedStatus: {
@@ -114,13 +83,11 @@ const getUsers = async (req, res) => {
       }
     );
 
-    // ── Post-lookup match (derived role/status) ─────────────
     const postMatch = {};
     if (role !== "all") postMatch.derivedRole = role.toUpperCase();
     if (status !== "all") postMatch.computedStatus = status.toUpperCase();
     if (Object.keys(postMatch).length) pipeline.push({ $match: postMatch });
 
-    // ── Facet: paginated data + total count ─────────────────
     pipeline.push({
       $facet: {
         data: [
@@ -145,8 +112,8 @@ const getUsers = async (req, res) => {
     const data = result[0]?.data || [];
     const total = result[0]?.totalCount?.[0]?.count || 0;
 
-    const ROLE_PREFIX = { DRIVER: "DRV", PASSENGER: "PAS", ADMIN: "ADM" };
-
+    const ROLE_PREFIX = { USER: "USR", ADMIN: "ADM" };
+    
     const formatted = data.map((u) => ({
       id: u._id,
       shortId: `${ROLE_PREFIX[u.derivedRole]}-${u._id.toString().slice(-5).toUpperCase()}`,
@@ -163,7 +130,6 @@ const getUsers = async (req, res) => {
       isSuspended: u.isSuspended || false,
     }));
 
-    // ── Stats (computed across ALL users, not just this page) ──
     const now = new Date();
     const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -221,10 +187,6 @@ const getUsers = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// PUT /api/admin/users/:id/suspend
-// Body: { suspend: true|false, reason?: string }
-// ─────────────────────────────────────────────────────────────
 const toggleSuspendUser = async (req, res) => {
   try {
     const { id } = req.params;
@@ -259,11 +221,6 @@ const toggleSuspendUser = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// POST /api/admin/users
-// Admin manually creates a user account (auto email-verified).
-// Body: { name, email, password, phone, gender, role, location }
-// ─────────────────────────────────────────────────────────────
 const createUserByAdmin = async (req, res) => {
   try {
     const { name, email, password, phone, gender, role, location } = req.body;
@@ -290,7 +247,7 @@ const createUserByAdmin = async (req, res) => {
       gender: gender || "",
       role: role === "admin" ? "admin" : "user",
       location: location || "",
-      isEmailVerified: true, // admin-created accounts are pre-verified
+      isEmailVerified: true,
     });
 
     await user.save();
@@ -311,11 +268,6 @@ const createUserByAdmin = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// GET /api/admin/users/export
-// Returns CSV of users matching the same filters as getUsers
-// (capped at 5000 rows).
-// ─────────────────────────────────────────────────────────────
 const exportUsersCsv = async (req, res) => {
   try {
     const { search = "", role = "all", status = "all", dateFrom, dateTo } = req.query;
@@ -349,7 +301,7 @@ const exportUsersCsv = async (req, res) => {
           derivedRole: {
             $cond: [
               { $eq: ["$role", "admin"] }, "ADMIN",
-              { $cond: [{ $gt: [{ $size: "$hostedTrips" }, 0] }, "DRIVER", "PASSENGER"] },
+              "USER",
             ],
           },
           computedStatus: {

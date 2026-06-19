@@ -7,6 +7,8 @@ import {
     Search, SlidersHorizontal, Star, Users, Car,
     MapPin, Calendar, User, ArrowRight, ArrowLeftRight,
     RotateCcw, ShieldCheck, AlertCircle, Loader2, ChevronDown,
+    Clock, CalendarDays, Sparkles, Zap, ClockArrowUp, 
+    CalendarIcon, Route, Info, TrendingUp
 } from 'lucide-react'
 import api from '@/lib/api'
 
@@ -51,7 +53,7 @@ interface Trip {
     fromWaypointName: string
     toWaypointName: string
     waypoints: Waypoint[]
-    vehicleInfo?: string  // 👈 ADDED
+    vehicleInfo?: string
 }
 
 const DEPARTURE_TIMES = ['Morning', 'Afternoon', 'Evening', 'Night']
@@ -87,41 +89,62 @@ function LocationInput({ value, onChange, placeholder, icon }: {
     const debounceRef = useRef<NodeJS.Timeout | null>(null)
 
     useEffect(() => {
-        if (debounceRef.current) clearTimeout(debounceRef.current)
+        if (debounceRef.current) {
+            clearTimeout(debounceRef.current)
+            debounceRef.current = null
+        }
+
         if (value.length < 2) {
             setSuggestions([])
             setShowSuggestions(false)
             return
         }
+
         setIsLoading(true)
-        debounceRef.current = setTimeout(async () => {
+        
+        const timeoutId = setTimeout(async () => {
             const results = await searchLocations(value)
             setSuggestions(results)
             setShowSuggestions(results.length > 0)
             setIsLoading(false)
-        }, 300)
-        return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+        }, 400)
+
+        debounceRef.current = timeoutId
+
+        return () => {
+            if (debounceRef.current) {
+                clearTimeout(debounceRef.current)
+            }
+        }
     }, [value])
 
     const selectLocation = (suggestion: Suggestion) => {
-        onChange(suggestion.display_name.split(',')[0])
+        const locationName = suggestion.display_name.split(',')[0]
+        onChange(locationName)
         setShowSuggestions(false)
         setSuggestions([])
     }
 
     return (
         <div className="relative">
-            <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2.5 focus-within:ring-2 focus-within:ring-blue-500 transition">
+            <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2.5 focus-within:ring-2 focus-within:ring-blue-500 transition bg-white">
                 {icon}
-                <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-                    className="flex-1 text-sm text-gray-900 outline-none placeholder-gray-400 bg-transparent" />
-                {isLoading && <Loader2 size={14} className="text-gray-400 animate-spin" />}
+                <input 
+                    value={value} 
+                    onChange={e => onChange(e.target.value)} 
+                    placeholder={placeholder}
+                    className="flex-1 text-sm text-gray-900 outline-none placeholder-gray-400 bg-transparent"
+                />
+                {isLoading && <Loader2 size={14} className="text-gray-400 animate-spin shrink-0" />}
             </div>
             {showSuggestions && suggestions.length > 0 && (
                 <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                     {suggestions.map((s, idx) => (
-                        <button key={idx} onClick={() => selectLocation(s)}
-                            className="w-full text-left px-3 py-2 hover:bg-gray-50 transition flex items-start gap-2 border-b border-gray-100 last:border-0">
+                        <button 
+                            key={idx} 
+                            onClick={() => selectLocation(s)}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-50 transition flex items-start gap-2 border-b border-gray-100 last:border-0"
+                        >
                             <MapPin size={14} className="text-gray-400 mt-0.5 shrink-0" />
                             <div>
                                 <p className="text-sm text-gray-900">{s.display_name.split(',')[0]}</p>
@@ -224,11 +247,12 @@ function FilterSidebar({ filters, setFilters, onReset }: { filters: any; setFilt
     )
 }
 
-function TripCard({ trip, searchFrom, searchTo, searchDate }: {
+function TripCard({ trip, searchFrom, searchTo, searchDate, isAdjacent }: {
     trip: Trip
     searchFrom: string
     searchTo: string
     searchDate: string
+    isAdjacent?: boolean
 }) {
     const [showWaypoints, setShowWaypoints] = useState(false)
 
@@ -245,7 +269,6 @@ function TripCard({ trip, searchFrom, searchTo, searchDate }: {
         return `${displayHour}:${minute} ${period}`
     }
 
-    // Build the detail link with all segment parameters
     const detailLink = `/trip/${trip.id}` +
         `?from=${encodeURIComponent(searchFrom)}` +
         `&to=${encodeURIComponent(searchTo)}` +
@@ -258,8 +281,35 @@ function TripCard({ trip, searchFrom, searchTo, searchDate }: {
         `&fromOrder=${trip.fromOrder}` +
         `&toOrder=${trip.toOrder}`
 
+    // Calculate if adjacent is before or after
+    const getAdjacentLabel = () => {
+        if (!isAdjacent) return null
+        const tripDate = new Date(trip.departureDate)
+        const searchDateObj = new Date(searchDate)
+        const diffTime = tripDate.getTime() - searchDateObj.getTime()
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+        
+        if (diffDays === 1) return `One day after your search date`
+        if (diffDays === -1) return `One day before your search date`
+        return `Adjacent date trip`
+    }
+
     return (
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition overflow-hidden">
+        <div className={`bg-white border rounded-lg shadow-sm hover:shadow-md transition overflow-hidden ${
+            isAdjacent ? 'border-blue-300 border-2 bg-gradient-to-r from-blue-50/50 to-white' : 'border-gray-200'
+        }`}>
+            {isAdjacent && (
+                <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-semibold px-4 py-1.5 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                        <CalendarDays size={12} />
+                        {getAdjacentLabel()}
+                    </span>
+                    <span className="flex items-center gap-1.5 bg-blue-400/30 px-2 py-0.5 rounded-full">
+                        <ClockArrowUp size={10} />
+                        {formatDate(trip.departureDate)}
+                    </span>
+                </div>
+            )}
             <div className="flex">
                 {trip.badge && (
                     <div className={`w-1.5 shrink-0 ${trip.badge === 'WOMEN ONLY' ? 'bg-rose-500' : 'bg-blue-600'}`} />
@@ -267,7 +317,7 @@ function TripCard({ trip, searchFrom, searchTo, searchDate }: {
                 <div className="flex-1 p-4">
                     <div className="flex items-start gap-4">
                         <div className="shrink-0">
-                            <div className="w-11 h-11 rounded-full bg-blue-100 text-blue-700 font-bold text-sm flex items-center justify-center">
+                            <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 text-blue-700 font-bold text-sm flex items-center justify-center">
                                 {trip.avatar}
                             </div>
                         </div>
@@ -278,6 +328,11 @@ function TripCard({ trip, searchFrom, searchTo, searchDate }: {
                                 <span className="flex items-center gap-0.5 text-xs text-amber-500 font-medium">
                                     <Star size={11} fill="currentColor" /> {trip.rating}
                                 </span>
+                                {isAdjacent && (
+                                    <span className="flex items-center gap-1 text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                                        <Sparkles size={10} /> Adjacent
+                                    </span>
+                                )}
                             </div>
 
                             <div className="mt-2">
@@ -291,7 +346,6 @@ function TripCard({ trip, searchFrom, searchTo, searchDate }: {
                                 </p>
                             </div>
 
-                            {/* 👇 VEHICLE INFO */}
                             {trip.vehicleInfo && (
                                 <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
                                     <Car size={13} className="text-gray-400" />
@@ -306,7 +360,7 @@ function TripCard({ trip, searchFrom, searchTo, searchDate }: {
                                         className="flex items-center gap-1 text-[10px] text-blue-500 hover:text-blue-600"
                                     >
                                         <ChevronDown size={10} className={`transition-transform ${showWaypoints ? 'rotate-180' : ''}`} />
-                                        {showWaypoints ? 'Hide' : 'Show'} route stops
+                                        {showWaypoints ? 'Hide route stops' : `Show ${trip.waypoints.length - 2} intermediate stops`}
                                     </button>
                                     {showWaypoints && (
                                         <div className="mt-2 flex flex-wrap gap-1">
@@ -325,27 +379,27 @@ function TripCard({ trip, searchFrom, searchTo, searchDate }: {
                                 </div>
                             )}
 
-                            <div className="flex items-center gap-3 mt-3">
-                                <div className="text-center">
-                                    <p className="text-sm font-bold text-gray-900">
-                                        {parseTime(trip.departTime)}
-                                    </p>
-                                    <p className="text-[10px] text-gray-400">{formatDate(trip.departureDate)}</p>
-                                </div>
-                                <div className="flex-1 flex flex-col items-center gap-0.5">
-                                    <span className="text-[10px] text-gray-400">{trip.distanceKm} km</span>
-                                    <div className="flex items-center gap-1 w-full">
-                                        <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
-                                        <div className="flex-1 border-t border-dashed border-gray-300" />
-                                        <span className="text-[10px] text-gray-400">segment</span>
-                                        <div className="flex-1 border-t border-dashed border-gray-300" />
-                                        <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                            <div className="flex items-center gap-4 mt-3">
+                                <div className="flex items-center gap-2">
+                                    <Clock size={14} className="text-gray-400" />
+                                    <div>
+                                        <p className="text-sm font-bold text-gray-900">
+                                            {parseTime(trip.departTime)}
+                                        </p>
+                                        <p className="text-[10px] text-gray-400">{formatDate(trip.departureDate)}</p>
                                     </div>
-                                    <span className="text-[10px] text-gray-400">of {trip.totalDistanceKm} km</span>
+                                </div>
+                                <div className="flex-1 flex items-center gap-2">
+                                    <div className="flex-1 h-px bg-gray-200 relative">
+                                        <div className="absolute left-1/2 -translate-x-1/2 -top-3 flex items-center gap-1 bg-white px-2">
+                                            <Route size={12} className="text-gray-400" />
+                                            <span className="text-[10px] text-gray-400">{trip.distanceKm} km</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-3 mt-2 flex-wrap">
+                            <div className="flex items-center gap-4 mt-2 flex-wrap">
                                 <span className="flex items-center gap-1 text-xs text-gray-500">
                                     <Users size={12} /> {trip.seatsLeft} seats left
                                 </span>
@@ -354,6 +408,10 @@ function TripCard({ trip, searchFrom, searchTo, searchDate }: {
                                         Women Only
                                     </span>
                                 )}
+                                <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                                    <TrendingUp size={10} />
+                                    {Math.round((1 - trip.seatsLeft / trip.totalSeats) * 100)}% filled
+                                </span>
                             </div>
                         </div>
                         <div className="shrink-0 flex flex-col items-end gap-2 ml-2">
@@ -363,10 +421,18 @@ function TripCard({ trip, searchFrom, searchTo, searchDate }: {
                                 <p className="text-[10px] text-gray-400">for {trip.distanceKm}km</p>
                             </div>
                             <Link href={detailLink}>
-                                <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition">
-                                    View Ride
+                                <button className={`px-4 py-2 text-white text-xs font-semibold rounded-lg transition ${
+                                    isAdjacent ? 'bg-blue-500 hover:bg-blue-600' : 'bg-blue-600 hover:bg-blue-700'
+                                }`}>
+                                    {isAdjacent ? 'View Adjacent Ride' : 'View Ride'}
                                 </button>
                             </Link>
+                            {isAdjacent && (
+                                <p className="text-[9px] text-blue-500 flex items-center gap-1">
+                                    <CalendarDays size={8} />
+                                    {formatDate(trip.departureDate)}
+                                </p>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -389,18 +455,19 @@ export default function FindARidePage() {
     const [searched, setSearched] = useState(false)
     const [loading, setLoading] = useState(false)
     const [trips, setTrips] = useState<Trip[]>([])
+    const [adjacentTrips, setAdjacentTrips] = useState<Trip[]>([])
+    const [showAdjacent, setShowAdjacent] = useState(false)
     const [error, setError] = useState('')
 
     const [filters, setFilters] = useState({
         womenOnly: false,
         verifiedOnly: false,
-        maxPrice: 1000,
+        maxPrice: 2000,
         times: [] as string[],
         seats: 0,
         vehicles: ['Sedan', 'SUV'] as string[],
     })
 
-    // Swap from and to
     const swapLocations = () => {
         const tempFrom = from
         const tempTo = to
@@ -419,6 +486,8 @@ export default function FindARidePage() {
         setLoading(true)
         setError('')
         setSearched(true)
+        setAdjacentTrips([])
+        setShowAdjacent(false)
 
         if (updateUrl) {
             const urlParams = new URLSearchParams()
@@ -439,24 +508,73 @@ export default function FindARidePage() {
                 maxPrice: currentFilters.maxPrice.toString(),
                 womenOnly: currentFilters.womenOnly.toString()
             })
-            if (date) params.append('date', date)
+            
             const response = await api.get(`/trips/search?${params}`)
             if (response.data.success) {
                 let results = response.data.data || []
-                if (currentFilters.verifiedOnly) results = results.filter((t: Trip) => t.verified)
-                if (currentFilters.seats > 0) results = results.filter((t: Trip) => t.seatsLeft >= currentFilters.seats)
-                if (sortBy === 'Price: Low') results.sort((a, b) => a.price - b.price)
-                else if (sortBy === 'Price: High') results.sort((a, b) => b.price - a.price)
-                else if (sortBy === 'Rating') results.sort((a, b) => b.rating - a.rating)
-                setTrips(results)
-                if (results.length === 0) setError('No trips found')
+                
+                // ── Filter by selected date ──
+                const exactDateResults = results.filter((t: Trip) => t.departureDate === date)
+                
+                // ── Find adjacent date trips (1 day before or after) ──
+                const searchDate = new Date(date)
+                const adjacentResults = results.filter((t: Trip) => {
+                    const tripDate = new Date(t.departureDate)
+                    const diffTime = Math.abs(tripDate.getTime() - searchDate.getTime())
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+                    return diffDays === 1 && t.departureDate !== date
+                })
+                
+                // ── Apply filters ──
+                let filteredResults = exactDateResults
+                let filteredAdjacent = adjacentResults
+                
+                if (currentFilters.verifiedOnly) {
+                    filteredResults = filteredResults.filter((t: Trip) => t.verified)
+                    filteredAdjacent = filteredAdjacent.filter((t: Trip) => t.verified)
+                }
+                
+                if (currentFilters.seats > 0) {
+                    filteredResults = filteredResults.filter((t: Trip) => t.seatsLeft >= currentFilters.seats)
+                    filteredAdjacent = filteredAdjacent.filter((t: Trip) => t.seatsLeft >= currentFilters.seats)
+                }
+                
+                // ── Sort ──
+                if (sortBy === 'Price: Low') {
+                    filteredResults.sort((a, b) => a.price - b.price)
+                    filteredAdjacent.sort((a, b) => a.price - b.price)
+                } else if (sortBy === 'Price: High') {
+                    filteredResults.sort((a, b) => b.price - a.price)
+                    filteredAdjacent.sort((a, b) => b.price - a.price)
+                } else if (sortBy === 'Rating') {
+                    filteredResults.sort((a, b) => b.rating - a.rating)
+                    filteredAdjacent.sort((a, b) => b.rating - a.rating)
+                }
+                
+                setTrips(filteredResults)
+                setAdjacentTrips(filteredAdjacent)
+                setShowAdjacent(filteredAdjacent.length > 0 && filteredResults.length === 0)
+                
+                if (filteredResults.length === 0 && filteredAdjacent.length === 0) {
+                    setError('No trips found for this route and date')
+                } else if (filteredResults.length === 0 && filteredAdjacent.length > 0) {
+                    setError(`No trips available on ${formatDateDisplay(date)}. Showing alternative trips on nearby dates.`)
+                } else {
+                    setError('')
+                }
             }
         } catch (error: any) {
             setError(error.response?.data?.message || 'Failed to search trips')
             setTrips([])
+            setAdjacentTrips([])
         } finally {
             setLoading(false)
         }
+    }
+
+    const formatDateDisplay = (dateStr: string) => {
+        const d = new Date(dateStr)
+        return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     }
 
     const handleSearch = async () => {
@@ -468,12 +586,11 @@ export default function FindARidePage() {
     }
 
     const resetFilters = () => {
-        const newFilters = { womenOnly: false, verifiedOnly: false, maxPrice: 1000, times: [], seats: 0, vehicles: [] }
+        const newFilters = { womenOnly: false, verifiedOnly: false, maxPrice: 2000, times: [], seats: 0, vehicles: [] }
         setFilters(newFilters)
         if (searched) performSearch(newFilters, true)
     }
 
-    // Load from URL params only once on mount
     useEffect(() => {
         const fromParam = searchParams.get('from')
         const toParam = searchParams.get('to')
@@ -500,8 +617,8 @@ export default function FindARidePage() {
             }, 100)
         }
     }, [])
-    
-    const displayed = showAll ? trips : trips.slice(0, 4)
+
+    const displayedTrips = showAll ? trips : trips.slice(0, 4)
 
     return (
         <div className="space-y-5">
@@ -509,10 +626,14 @@ export default function FindARidePage() {
                 <div className="grid grid-cols-[1fr_auto_1fr_auto_auto_auto] gap-3 items-end">
                     <div>
                         <label className="text-xs text-gray-500 mb-1 block">From</label>
-                        <LocationInput value={from} onChange={setFrom} placeholder="Enter origin city" icon={<span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />} />
+                        <LocationInput 
+                            value={from} 
+                            onChange={setFrom} 
+                            placeholder="Enter origin city" 
+                            icon={<span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />} 
+                        />
                     </div>
 
-                    {/* Swap Button */}
                     <div className="mb-1">
                         <button
                             onClick={swapLocations}
@@ -526,7 +647,12 @@ export default function FindARidePage() {
 
                     <div>
                         <label className="text-xs text-gray-500 mb-1 block">To</label>
-                        <LocationInput value={to} onChange={setTo} placeholder="Enter destination city" icon={<span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />} />
+                        <LocationInput 
+                            value={to} 
+                            onChange={setTo} 
+                            placeholder="Enter destination city" 
+                            icon={<span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />} 
+                        />
                     </div>
 
                     <div>
@@ -558,14 +684,25 @@ export default function FindARidePage() {
                 </div>
             </div>
 
-            {error && <div className="bg-red-50 border border-red-200 rounded-lg p-3"><p className="text-red-600 text-sm">{error}</p></div>}
+            {error && (
+                <div className={`rounded-lg p-3 ${showAdjacent ? 'bg-blue-50 border border-blue-200' : 'bg-red-50 border border-red-200'}`}>
+                    <div className="flex items-start gap-2">
+                        <Info size={16} className={`mt-0.5 ${showAdjacent ? 'text-blue-500' : 'text-red-500'}`} />
+                        <p className={`text-sm ${showAdjacent ? 'text-blue-700' : 'text-red-600'}`}>{error}</p>
+                    </div>
+                </div>
+            )}
 
             <div className="flex gap-5 items-start">
                 <FilterSidebar filters={filters} setFilters={setFilters} onReset={resetFilters} />
                 <div className="flex-1 space-y-3">
                     <div className="flex items-center justify-between">
                         <p className="text-gray-900 font-semibold text-sm">
-                            {loading ? 'Searching...' : `${trips.length} trip${trips.length !== 1 ? 's' : ''} found`}
+                            {loading ? 'Searching...' : 
+                                trips.length > 0 ? `${trips.length} trip${trips.length !== 1 ? 's' : ''} found` :
+                                adjacentTrips.length > 0 ? `${adjacentTrips.length} adjacent trip${adjacentTrips.length !== 1 ? 's' : ''} available` :
+                                'No trips found'
+                            }
                         </p>
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-gray-500">Sort by:</span>
@@ -588,16 +725,55 @@ export default function FindARidePage() {
                             <Loader2 size={32} className="text-blue-500 mx-auto mb-3 animate-spin" />
                             <p className="text-gray-500 text-sm">Searching for trips...</p>
                         </div>
-                    ) : displayed.length > 0 ? (
-                        displayed.map(trip => (
-                            <TripCard
-                                key={trip.id}
-                                trip={trip}
-                                searchFrom={from}
-                                searchTo={to}
-                                searchDate={date}
-                            />
-                        ))
+                    ) : displayedTrips.length > 0 ? (
+                        <>
+                            {displayedTrips.map(trip => (
+                                <TripCard
+                                    key={trip.id}
+                                    trip={trip}
+                                    searchFrom={from}
+                                    searchTo={to}
+                                    searchDate={date}
+                                />
+                            ))}
+                            {adjacentTrips.length > 0 && showAdjacent && (
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                    <p className="text-xs text-gray-500 mb-3 flex items-center gap-2">
+                                        <CalendarDays size={14} />
+                                        Alternative trips on adjacent dates:
+                                    </p>
+                                    {adjacentTrips.map(trip => (
+                                        <TripCard
+                                            key={trip.id}
+                                            trip={trip}
+                                            searchFrom={from}
+                                            searchTo={to}
+                                            searchDate={date}
+                                            isAdjacent={true}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                        </>
+                    ) : adjacentTrips.length > 0 && showAdjacent ? (
+                        <>
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                                <p className="text-sm text-blue-700">
+                                    No trips available on {formatDateDisplay(date)}. 
+                                    <span className="font-semibold"> Showing alternative trips on nearby dates:</span>
+                                </p>
+                            </div>
+                            {adjacentTrips.map(trip => (
+                                <TripCard
+                                    key={trip.id}
+                                    trip={trip}
+                                    searchFrom={from}
+                                    searchTo={to}
+                                    searchDate={date}
+                                    isAdjacent={true}
+                                />
+                            ))}
+                        </>
                     ) : (
                         <div className="bg-white border border-gray-200 rounded-lg p-10 text-center">
                             <AlertCircle size={32} className="text-gray-300 mx-auto mb-3" />

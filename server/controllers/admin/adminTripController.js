@@ -1,28 +1,17 @@
-// server/controllers/adminTripController.js
 const mongoose = require("mongoose");
-const Trip     = require("../../models/Trip");
-const Booking  = require("../../models/Booking");
+const Trip = require("../../models/Trip");
+const Booking = require("../../models/Booking");
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Convert Trip.status + departureDate into the display status
- * the admin UI expects: Ongoing | Upcoming | Completed | Cancelled
- */
 function resolveStatus(tripStatus, departureDate) {
   if (tripStatus === "cancelled") return "Cancelled";
   if (tripStatus === "completed") return "Completed";
-  const today    = new Date();
+  const today = new Date();
   const tripDate = new Date(departureDate);
   if (tripDate.toDateString() === today.toDateString()) return "Ongoing";
   if (tripDate < today) return "Completed";
   return "Upcoming";
 }
 
-/**
- * Count confirmed seat-bookings across all seats of a trip.
- * SAFE: handles missing seats or bookings
- */
 function countBookedSeats(trip) {
   if (!trip.seats || !Array.isArray(trip.seats)) return 0;
   return trip.seats.reduce(
@@ -31,115 +20,85 @@ function countBookedSeats(trip) {
   );
 }
 
-/**
- * Format a Trip document into the shape the admin Trips table expects.
- * SAFE: handles missing driver, seats, waypoints
- */
 function formatTrip(trip) {
   const driver = trip.driverId || {};
   const bookedSeats = trip.seats && Array.isArray(trip.seats) ? countBookedSeats(trip) : 0;
   const status = resolveStatus(trip.status, trip.departureDate);
 
   return {
-    id:     trip._id,
+    id: trip._id,
     tripId: trip._id,
-
     route: {
       from: trip.from || "",
-      to:   trip.to || "",
+      to: trip.to || "",
       via: trip.waypoints && trip.waypoints.length > 2
         ? `Via ${trip.waypoints.slice(1, -1).map(w => w.name).join(", ")}`
         : undefined,
     },
-
     driver: {
-      id:     driver._id,
-      name:   driver.name   || "Unknown",
-      avatar: (driver.name  || "U").slice(0, 2).toUpperCase(),
+      id: driver._id,
+      name: driver.name || "Unknown",
+      avatar: (driver.name || "U").slice(0, 2).toUpperCase(),
       rating: driver.rating || 0,
       online: false,
       isVerified: driver.isVerified || false,
-      phone:  driver.phone  || "",
+      phone: driver.phone || "",
     },
-
-    date:     trip.departureDate,
-    time:     trip.departureTime,
-
+    date: trip.departureDate,
+    time: trip.departureTime,
     seats: {
       booked: bookedSeats,
-      total:  trip.totalSeats || 0,
+      total: trip.totalSeats || 0,
     },
-
-    distanceKm:  trip.totalDistanceKm || 0,
+    distanceKm: trip.totalDistanceKm || 0,
     farePerSeat: trip.pricePerSeat || 0,
-    farePerKm:   trip.farePerKm || 0,
-
+    farePerKm: trip.farePerKm || 0,
     status,
     rawStatus: trip.status,
-
-    womenOnly:  trip.womenOnly || false,
-    waypoints:  trip.waypoints || [],
-
+    womenOnly: trip.womenOnly || false,
+    waypoints: trip.waypoints || [],
     createdAt: trip.createdAt,
     updatedAt: trip.updatedAt,
   };
 }
 
-// ─── GET ALL TRIPS (admin table) ─────────────────────────────────────────────
-/**
- * GET /api/admin/trips
- *
- * Query params:
- *   page        (default 1)
- *   limit       (default 8)
- *   search      — matches trip ID, from, to, driver name
- *   fromCity
- *   toCity
- *   date        — YYYY-MM-DD
- *   status      — Ongoing | Upcoming | Completed | Cancelled | All Statuses
- *   driverName
- */
 const getAllTrips = async (req, res) => {
   try {
     const {
-      page       = 1,
-      limit      = 8,
-      search     = "",
-      fromCity   = "",
-      toCity     = "",
-      date       = "",
-      status     = "All Statuses",
+      page = 1,
+      limit = 8,
+      search = "",
+      fromCity = "",
+      toCity = "",
+      date = "",
+      status = "All Statuses",
       driverName = "",
     } = req.query;
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // ── Build query ───────────────────────────────────────────────────────
     const query = {};
 
     if (fromCity) query.from = { $regex: new RegExp(fromCity, "i") };
-    if (toCity)   query.to   = { $regex: new RegExp(toCity,   "i") };
-    if (date)     query.departureDate = date;
+    if (toCity) query.to = { $regex: new RegExp(toCity, "i") };
+    if (date) query.departureDate = date;
 
-    // Map UI status labels → DB status values
     if (status && status !== "All Statuses") {
       const statusMap = {
-        Ongoing:   "upcoming",
-        Upcoming:  "upcoming",
+        Ongoing: "upcoming",
+        Upcoming: "upcoming",
         Completed: "completed",
         Cancelled: "cancelled",
       };
       if (statusMap[status]) query.status = statusMap[status];
     }
 
-    // ── Fetch with driver populate ────────────────────────────────────────
     let tripsQuery = Trip.find(query)
       .populate("driverId", "name email phone rating profilePhoto isVerified")
       .sort({ departureDate: -1, createdAt: -1 });
 
     let trips = await tripsQuery.lean({ virtuals: false });
 
-    // Post-populate filters
     if (driverName) {
       const dn = driverName.toLowerCase();
       trips = trips.filter(t => t.driverId?.name?.toLowerCase().includes(dn));
@@ -155,7 +114,6 @@ const getAllTrips = async (req, res) => {
       );
     }
 
-    // Status "Ongoing" = today's trips specifically
     if (status === "Ongoing") {
       const today = new Date().toISOString().split("T")[0];
       trips = trips.filter(t => t.departureDate === today && t.status === "upcoming");
@@ -164,17 +122,17 @@ const getAllTrips = async (req, res) => {
       trips = trips.filter(t => t.departureDate > today && t.status === "upcoming");
     }
 
-    const total     = trips.length;
+    const total = trips.length;
     const paginated = trips.slice(skip, skip + parseInt(limit));
     const formatted = paginated.map(formatTrip);
 
     return res.json({
       success: true,
-      data:    formatted,
+      data: formatted,
       pagination: {
         total,
-        page:       parseInt(page),
-        limit:      parseInt(limit),
+        page: parseInt(page),
+        limit: parseInt(limit),
         totalPages: Math.ceil(total / parseInt(limit)),
       },
     });
@@ -184,13 +142,6 @@ const getAllTrips = async (req, res) => {
   }
 };
 
-// ─── GET TRIP STATS (stat cards) ─────────────────────────────────────────────
-/**
- * GET /api/admin/trips/stats
- *
- * Returns counts for today's 4 stat cards:
- *   todayTrips | activeTrips | completedToday | cancelledToday
- */
 const getTripStats = async (req, res) => {
   try {
     const today = new Date().toISOString().split("T")[0];
@@ -204,7 +155,7 @@ const getTripStats = async (req, res) => {
 
     const activeTrips = await Trip.countDocuments({
       departureDate: today,
-      status:        "upcoming",
+      status: "upcoming",
     });
 
     return res.json({
@@ -223,11 +174,6 @@ const getTripStats = async (req, res) => {
   }
 };
 
-// ─── GET SINGLE TRIP ─────────────────────────────────────────────────────────
-/**
- * GET /api/admin/trips/:id
- * Full trip detail including all bookings and passenger info.
- */
 const getAdminTripById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -248,24 +194,24 @@ const getAdminTripById = async (req, res) => {
       .sort({ createdAt: -1 });
 
     const formattedBookings = bookings.map(b => ({
-      bookingId:   b._id,
+      bookingId: b._id,
       passenger: {
-        id:     b.passengerId?._id,
-        name:   b.passengerId?.name  || "Unknown",
-        email:  b.passengerId?.email || "",
-        phone:  b.passengerId?.phone || "",
+        id: b.passengerId?._id,
+        name: b.passengerId?.name || "Unknown",
+        email: b.passengerId?.email || "",
+        phone: b.passengerId?.phone || "",
         avatar: (b.passengerId?.name || "U").slice(0, 2).toUpperCase(),
         rating: b.passengerId?.rating || 0,
       },
-      seatNumber:  b.seatNumber,
-      fromName:    b.fromName,
-      toName:      b.toName,
-      fromOrder:   b.fromOrder,
-      toOrder:     b.toOrder,
-      distanceKm:  b.distanceKm || 0,
+      seatNumber: b.seatNumber,
+      fromName: b.fromName,
+      toName: b.toName,
+      fromOrder: b.fromOrder,
+      toOrder: b.toOrder,
+      distanceKm: b.distanceKm || 0,
       fareCharged: b.fareCharged || 0,
-      status:      b.status,
-      createdAt:   b.createdAt,
+      status: b.status,
+      createdAt: b.createdAt,
     }));
 
     const confirmedBookings = formattedBookings.filter(b => b.status === "confirmed");
@@ -285,15 +231,10 @@ const getAdminTripById = async (req, res) => {
   }
 };
 
-// ─── UPDATE TRIP (admin can update any trip) ──────────────────────────────────
-/**
- * PUT /api/admin/trips/:id
- * Admin can update any field — no driver ownership check.
- */
 const adminUpdateTrip = async (req, res) => {
   try {
-    const { id }     = req.params;
-    const updates    = req.body;
+    const { id } = req.params;
+    const updates = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ success: false, message: "Invalid trip ID" });
@@ -322,7 +263,7 @@ const adminUpdateTrip = async (req, res) => {
     return res.json({
       success: true,
       message: "Trip updated successfully",
-      data:    formatTrip(trip.toObject()),
+      data: formatTrip(trip.toObject()),
     });
   } catch (error) {
     console.error("Admin adminUpdateTrip error:", error);
@@ -330,16 +271,10 @@ const adminUpdateTrip = async (req, res) => {
   }
 };
 
-// ─── CANCEL TRIP (admin) ─────────────────────────────────────────────────────
-/**
- * PUT /api/admin/trips/:id/cancel
- * Admin can cancel any trip regardless of driver ownership.
- * Also cancels all active bookings and logs the admin action.
- */
 const adminCancelTrip = async (req, res) => {
   try {
-    const { id }     = req.params;
-    const adminId    = req.user.userId;
+    const { id } = req.params;
+    const adminId = req.user.userId;
     const { reason } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -378,7 +313,7 @@ const adminCancelTrip = async (req, res) => {
       success: true,
       message: "Trip cancelled successfully",
       data: {
-        tripId:            id,
+        tripId: id,
         bookingsCancelled: cancelledBookings.modifiedCount,
       },
     });
@@ -388,11 +323,6 @@ const adminCancelTrip = async (req, res) => {
   }
 };
 
-// ─── BULK CANCEL ─────────────────────────────────────────────────────────────
-/**
- * PUT /api/admin/trips/bulk-cancel
- * Body: { tripIds: string[], reason?: string }
- */
 const adminBulkCancelTrips = async (req, res) => {
   try {
     const { tripIds, reason } = req.body;
@@ -412,7 +342,7 @@ const adminBulkCancelTrips = async (req, res) => {
 
     const tripResult = await Trip.updateMany(
       {
-        _id:    { $in: tripIds },
+        _id: { $in: tripIds },
         status: { $nin: ["completed", "cancelled"] },
       },
       { status: "cancelled" }
@@ -432,13 +362,51 @@ const adminBulkCancelTrips = async (req, res) => {
       success: true,
       message: `${tripResult.modifiedCount} trip(s) cancelled`,
       data: {
-        tripsCancelled:    tripResult.modifiedCount,
+        tripsCancelled: tripResult.modifiedCount,
         bookingsCancelled: bookingResult.modifiedCount,
       },
     });
   } catch (error) {
     console.error("Admin adminBulkCancelTrips error:", error);
     return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const getOngoingTrips = async (req, res) => {
+  try {
+    const today = new Date().toISOString().split("T")[0];
+
+    const trips = await Trip.find({
+      departureDate: today,
+      status: { $in: ["upcoming", "ongoing"] },
+    })
+      .populate("driverId", "name")
+      .lean();
+
+    const data = trips.map((trip) => ({
+      id: trip._id,
+      coords: [
+        trip.fromLocation?.coordinates?.[1] || 11.2588,
+        trip.fromLocation?.coordinates?.[0] || 75.7804,
+      ],
+      driverName: trip.driverId?.name || "Unknown Driver",
+      from: trip.from,
+      to: trip.to,
+      status: trip.status,
+      departureTime: trip.departureTime,
+    }));
+
+    res.json({
+      success: true,
+      count: data.length,
+      data,
+    });
+  } catch (error) {
+    console.error("getOngoingTrips:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
 
@@ -449,4 +417,5 @@ module.exports = {
   adminUpdateTrip,
   adminCancelTrip,
   adminBulkCancelTrips,
+  getOngoingTrips,
 };

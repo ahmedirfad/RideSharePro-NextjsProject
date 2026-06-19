@@ -477,27 +477,26 @@ export default function AdminDashboard() {
             </div>
             <button className="text-gray-500 hover:text-white transition"><Download size={14} /></button>
           </div>
-          <div className="p-5" style={{ height: '260px' }}>
-            {loading
-              ? <div className="h-full flex items-end gap-1.5 pb-4">
-                  {Array.from({length:14}).map((_,i) => (
-                    <div key={i} className="flex-1 bg-white/5 rounded-t animate-pulse" style={{ height: `${30 + Math.random()*60}%` }} />
-                  ))}
-                </div>
-              : revenueChart.length > 0
-              ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={revenueChart} barSize={14} barGap={2}>
-                    <XAxis dataKey="label" tick={{ fill: '#4b5563', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis hide />
-                    <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
-                    <Bar dataKey="gross" radius={[4, 4, 0, 0]} fill="#2563eb" />
-                    <Bar dataKey="fee"   radius={[4, 4, 0, 0]} fill="#7c3aed" />
-                  </BarChart>
-                </ResponsiveContainer>
-              )
-              : <div className="h-full flex items-center justify-center text-gray-600 text-sm">No revenue data for this period</div>
-            }
+          <div className="p-5 h-[260px]">
+            {loading ? (
+              <div className="h-full flex items-end gap-1.5 pb-4">
+                {Array.from({length:14}).map((_,i) => (
+                  <div key={i} className="flex-1 bg-white/5 rounded-t animate-pulse" style={{ height: `${30 + Math.random()*60}%` }} />
+                ))}
+              </div>
+            ) : revenueChart.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={revenueChart} barSize={14} barGap={2}>
+                  <XAxis dataKey="label" tick={{ fill: '#4b5563', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis hide />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                  <Bar dataKey="gross" radius={[4, 4, 0, 0]} fill="#2563eb" />
+                  <Bar dataKey="fee"   radius={[4, 4, 0, 0]} fill="#7c3aed" />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-gray-600 text-sm">No revenue data for this period</div>
+            )}
           </div>
         </div>
 
@@ -507,26 +506,25 @@ export default function AdminDashboard() {
             <span className="text-sm font-bold text-white">Trip Status Breakdown</span>
           </div>
           <div className="p-5 flex flex-col items-center">
-            {loading
-              ? <div className="w-44 h-44 rounded-full border-8 border-white/5 animate-pulse" />
-              : (
-                <div className="relative" style={{ width: 180, height: 180 }}>
-                  <PieChart width={180} height={180}>
-                    <Pie data={tripStatus.filter(t => t.value > 0)} cx={85} cy={85}
-                      innerRadius={55} outerRadius={80}
-                      dataKey="value" strokeWidth={2} stroke="#0a0d14">
-                      {tripStatus.map((d) => <Cell key={d.name} fill={d.color} />)}
-                    </Pie>
-                  </PieChart>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <p className="text-2xl font-black text-white" style={{ fontFamily: "'Outfit',sans-serif" }}>
-                      {donutTotal > 1000 ? `${(donutTotal/1000).toFixed(1)}k` : donutTotal}
-                    </p>
-                    <p className="text-[10px] text-gray-500">total</p>
-                  </div>
+            {loading ? (
+              <div className="w-44 h-44 rounded-full border-8 border-white/5 animate-pulse" />
+            ) : (
+              <div className="relative w-[180px] h-[180px]">
+                <PieChart width={180} height={180}>
+                  <Pie data={tripStatus.filter(t => t.value > 0)} cx={85} cy={85}
+                    innerRadius={55} outerRadius={80}
+                    dataKey="value" strokeWidth={2} stroke="#0a0d14">
+                    {tripStatus.map((d) => <Cell key={d.name} fill={d.color} />)}
+                  </Pie>
+                </PieChart>
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <p className="text-2xl font-black text-white" style={{ fontFamily: "'Outfit',sans-serif" }}>
+                    {donutTotal > 1000 ? `${(donutTotal/1000).toFixed(1)}k` : donutTotal}
+                  </p>
+                  <p className="text-[10px] text-gray-500">total</p>
                 </div>
-              )
-            }
+              </div>
+            )}
             <div className="w-full space-y-2 mt-3">
               {(loading ? [{name:'Completed',value:0,color:'#3b82f6'},{name:'Cancelled',value:0,color:'#ef4444'},{name:'Upcoming',value:0,color:'#6b7280'},{name:'Ongoing',value:0,color:'#22c55e'}] : tripStatus).map((d) => (
                 <div key={d.name} className="flex items-center justify-between">
@@ -534,12 +532,13 @@ export default function AdminDashboard() {
                     <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: d.color }} />
                     <span className="text-xs text-gray-400">{d.name}</span>
                   </div>
-                  {loading
-                    ? <Skeleton className="h-3 w-10" />
-                    : <span className="text-xs font-bold text-gray-300">
-                        {d.value} {donutTotal > 0 ? `(${Math.round(d.value/donutTotal*100)}%)` : ''}
-                      </span>
-                  }
+                  {loading ? (
+                    <Skeleton className="h-3 w-10" />
+                  ) : (
+                    <span className="text-xs font-bold text-gray-300">
+                      {d.value} {donutTotal > 0 ? `(${Math.round(d.value/donutTotal*100)}%)` : ''}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -580,41 +579,42 @@ export default function AdminDashboard() {
             </Link>
           </div>
           <div className="p-5 space-y-3">
-            {loading
-              ? Array.from({length:5}).map((_,i) => (
-                  <div key={i} className="flex items-center gap-4">
-                    <Skeleton className="w-4 h-3" />
-                    <div className="flex-1 space-y-1">
-                      <div className="flex justify-between mb-1">
-                        <Skeleton className="h-3 w-44" />
-                        <Skeleton className="h-3 w-10" />
-                      </div>
-                      <Skeleton className="h-1.5 w-full rounded-full" />
+            {loading ? (
+              Array.from({length:5}).map((_,i) => (
+                <div key={i} className="flex items-center gap-4">
+                  <Skeleton className="w-4 h-3" />
+                  <div className="flex-1 space-y-1">
+                    <div className="flex justify-between mb-1">
+                      <Skeleton className="h-3 w-44" />
+                      <Skeleton className="h-3 w-10" />
                     </div>
-                    <Skeleton className="h-3 w-16" />
+                    <Skeleton className="h-1.5 w-full rounded-full" />
                   </div>
-                ))
-              : topRoutes.length === 0
-              ? <p className="text-center text-gray-600 text-sm py-6">No route data for this period</p>
-              : topRoutes.map((r) => (
-                  <div key={r.route} className="flex items-center gap-4">
-                    <span className="text-[10px] text-gray-600 font-mono w-4 shrink-0">{r.count}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-xs font-semibold text-gray-300 truncate">{r.route}</p>
-                        <span className="text-[10px] text-gray-500 shrink-0 ml-2">{r.count} bookings</span>
-                      </div>
-                      <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-600 rounded-full transition-all duration-700"
-                          style={{ width: `${r.pct}%` }} />
-                      </div>
+                  <Skeleton className="h-3 w-16" />
+                </div>
+              ))
+            ) : topRoutes.length === 0 ? (
+              <p className="text-center text-gray-600 text-sm py-6">No route data for this period</p>
+            ) : (
+              topRoutes.map((r) => (
+                <div key={r.route} className="flex items-center gap-4">
+                  <span className="text-[10px] text-gray-600 font-mono w-4 shrink-0">{r.count}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs font-semibold text-gray-300 truncate">{r.route}</p>
+                      <span className="text-[10px] text-gray-500 shrink-0 ml-2">{r.count} bookings</span>
                     </div>
-                    <span className="text-xs font-bold text-gray-300 shrink-0 w-24 text-right">
-                      ₹{r.revenue.toLocaleString('en-IN')}
-                    </span>
+                    <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full bg-blue-600 rounded-full transition-all duration-700"
+                        style={{ width: `${r.pct}%` }} />
+                    </div>
                   </div>
-                ))
-            }
+                  <span className="text-xs font-bold text-gray-300 shrink-0 w-24 text-right">
+                    ₹{r.revenue.toLocaleString('en-IN')}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -639,80 +639,81 @@ export default function AdminDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {loading
-                ? Array.from({length:5}).map((_,i) => (
-                    <tr key={i}>
-                      {Array.from({length:8}).map((__,j) => (
-                        <td key={j} className="px-4 py-3.5"><Skeleton className="h-4 w-full" /></td>
-                      ))}
-                    </tr>
-                  ))
-                : recentTrips.length === 0
-                ? <tr><td colSpan={8} className="px-5 py-10 text-center text-gray-600 text-sm">No trips found</td></tr>
-                : recentTrips.map((t) => {
-                    const sc = STATUS_COLOR[t.status] || 'bg-gray-500/15 text-gray-400 border-gray-500/20'
-                    return (
-                      <tr key={t.id} className="hover:bg-white/3 transition group">
-                        <td className="px-5 py-3.5">
-                          <span className="text-[11px] font-mono text-gray-500">
-                            #{String(t.id).slice(-8)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className="text-xs font-semibold text-gray-200">
-                            {t.route.from} → {t.route.to}
-                          </span>
-                          {t.route.via && (
-                            <p className="text-[10px] text-gray-600 mt-0.5">{t.route.via}</p>
-                          )}
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 text-white text-[9px] font-bold flex items-center justify-center shrink-0">
-                              {t.driver.avatar}
-                            </div>
-                            <div>
-                              <span className="text-xs text-gray-300">{t.driver.name}</span>
-                              {t.driver.isVerified && (
-                                <ShieldCheck size={9} className="inline ml-1 text-blue-400" />
-                              )}
-                            </div>
+              {loading ? (
+                Array.from({length:5}).map((_,i) => (
+                  <tr key={i}>
+                    {Array.from({length:8}).map((__,j) => (
+                      <td key={j} className="px-4 py-3.5"><Skeleton className="h-4 w-full" /></td>
+                    ))}
+                  </tr>
+                ))
+              ) : recentTrips.length === 0 ? (
+                <tr><td colSpan={8} className="px-5 py-10 text-center text-gray-600 text-sm">No trips found</td></tr>
+              ) : (
+                recentTrips.map((t) => {
+                  const sc = STATUS_COLOR[t.status] || 'bg-gray-500/15 text-gray-400 border-gray-500/20'
+                  return (
+                    <tr key={t.id} className="hover:bg-white/3 transition group">
+                      <td className="px-5 py-3.5">
+                        <span className="text-[11px] font-mono text-gray-500">
+                          #{String(t.id).slice(-8)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className="text-xs font-semibold text-gray-200">
+                          {t.route.from} → {t.route.to}
+                        </span>
+                        {t.route.via && (
+                          <p className="text-[10px] text-gray-600 mt-0.5">{t.route.via}</p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+                            {t.driver.avatar}
                           </div>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className="text-xs text-gray-500">
-                            {new Date(t.date).toLocaleDateString('en-IN', { day:'numeric', month:'short' })}, {t.time}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className="text-xs font-bold text-gray-200">₹{t.farePerSeat}</span>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className="text-xs text-gray-400">{t.seats.booked}/{t.seats.total}</span>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${sc}`}>
-                            {t.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
-                            <Link href={`/admin/trips/${t.id}`}>
-                              <button className="text-[10px] text-gray-400 hover:text-blue-400 px-2 py-1 rounded-lg hover:bg-blue-500/10 transition font-semibold">
-                                View
-                              </button>
-                            </Link>
-                            {t.status !== 'Completed' && t.status !== 'Cancelled' && (
-                              <button className="text-[10px] text-gray-400 hover:text-red-400 px-2 py-1 rounded-lg hover:bg-red-500/10 transition font-semibold">
-                                Cancel
-                              </button>
+                          <div>
+                            <span className="text-xs text-gray-300">{t.driver.name}</span>
+                            {t.driver.isVerified && (
+                              <ShieldCheck size={9} className="inline ml-1 text-blue-400" />
                             )}
                           </div>
-                        </td>
-                      </tr>
-                    )
-                  })
-              }
+                        </div>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className="text-xs text-gray-500">
+                          {new Date(t.date).toLocaleDateString('en-IN', { day:'numeric', month:'short' })}, {t.time}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className="text-xs font-bold text-gray-200">₹{t.farePerSeat}</span>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className="text-xs text-gray-400">{t.seats.booked}/{t.seats.total}</span>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${sc}`}>
+                          {t.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                          <Link href={`/admin/trips/${t.id}`}>
+                            <button className="text-[10px] text-gray-400 hover:text-blue-400 px-2 py-1 rounded-lg hover:bg-blue-500/10 transition font-semibold">
+                              View
+                            </button>
+                          </Link>
+                          {t.status !== 'Completed' && t.status !== 'Cancelled' && (
+                            <button className="text-[10px] text-gray-400 hover:text-red-400 px-2 py-1 rounded-lg hover:bg-red-500/10 transition font-semibold">
+                              Cancel
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
             </tbody>
           </table>
         </div>

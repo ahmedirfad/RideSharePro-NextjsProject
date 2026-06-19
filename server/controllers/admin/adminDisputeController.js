@@ -1,12 +1,6 @@
-// controllers/admin/adminDisputeController.js
-
 const mongoose = require("mongoose");
 const Dispute = require("../../models/Dispute");
 
-// ─────────────────────────────────────────────────────────────
-// GET /api/admin/disputes
-// Query: status, reason, search, page, limit
-// ─────────────────────────────────────────────────────────────
 const getAllDisputes = async (req, res) => {
   try {
     const { status, reason, search, page = 1, limit = 10 } = req.query;
@@ -83,9 +77,6 @@ const getAllDisputes = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// GET /api/admin/disputes/:id
-// ─────────────────────────────────────────────────────────────
 const getDisputeById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -111,10 +102,6 @@ const getDisputeById = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// PUT /api/admin/disputes/:id/resolve
-// Body: { status, resolution, adminNotes }
-// ─────────────────────────────────────────────────────────────
 const resolveDispute = async (req, res) => {
   try {
     const { id } = req.params;
@@ -151,9 +138,6 @@ const resolveDispute = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// GET /api/admin/disputes/stats
-// ─────────────────────────────────────────────────────────────
 const getDisputeStats = async (req, res) => {
   try {
     const [total, open, underReview, resolved, dismissed, byReason] = await Promise.all([
@@ -194,9 +178,6 @@ const getDisputeStats = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// GET /api/admin/disputes/export
-// ─────────────────────────────────────────────────────────────
 const exportDisputesCsv = async (req, res) => {
   try {
     const { status, reason } = req.query;

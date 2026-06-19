@@ -3,7 +3,10 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Car, Menu, X, LayoutDashboard, LogOut, ChevronDown, User } from 'lucide-react'
+import { 
+  Car, Menu, X, LayoutDashboard, LogOut, ChevronDown, User, 
+  Gauge, ShieldCheck, Settings, HelpCircle, Star, Calendar 
+} from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 
 export function Navbar() {
@@ -37,6 +40,9 @@ export function Navbar() {
     router.replace('/')
   }
 
+  // Check if user is admin - directly from store
+  const isAdmin = user?.role === 'admin'
+
   // Avatar initials
   const initials = user?.name
     ? user.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
@@ -63,13 +69,27 @@ export function Navbar() {
             Dashboard
           </Link>
 
+          {/* 👇 Admin Panel link - only for admins */}
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className="flex items-center gap-2 text-sm font-semibold text-purple-600 hover:text-purple-700 px-4 py-2 rounded-full hover:bg-purple-50 transition"
+            >
+              <Gauge size={15} />
+              Admin
+              <span className="text-[9px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full font-bold">ADMIN</span>
+            </Link>
+          )}
+
           {/* User avatar dropdown */}
           <div className="relative" id="user-menu">
             <button
               onClick={() => setDropOpen(!dropOpen)}
               className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-full border border-gray-200 hover:border-blue-300 hover:bg-gray-50 transition group"
             >
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 text-white text-xs font-bold flex items-center justify-center">
+              <div className={`w-8 h-8 rounded-full text-white text-xs font-bold flex items-center justify-center ${
+                isAdmin ? 'bg-gradient-to-br from-purple-600 to-purple-700' : 'bg-gradient-to-br from-blue-600 to-blue-700'
+              }`}>
                 {initials}
               </div>
               <span className="text-sm font-medium text-gray-700 max-w-[80px] truncate">
@@ -83,11 +103,16 @@ export function Navbar() {
 
             {/* Dropdown */}
             {dropOpen && (
-              <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-gray-100 rounded-2xl shadow-xl shadow-gray-200/60 py-1.5 z-50 overflow-hidden">
+              <div className="absolute right-0 top-full mt-2 w-56 bg-white border border-gray-100 rounded-2xl shadow-xl shadow-gray-200/60 py-1.5 z-50 overflow-hidden">
                 {/* User info */}
                 <div className="px-4 py-3 border-b border-gray-50">
                   <p className="text-sm font-semibold text-gray-900 truncate">{user?.name}</p>
                   <p className="text-xs text-gray-400 truncate mt-0.5">{user?.email}</p>
+                  {isAdmin && (
+                    <span className="inline-block mt-1.5 text-[9px] font-bold bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">
+                      Admin
+                    </span>
+                  )}
                 </div>
 
                 <Link
@@ -98,6 +123,19 @@ export function Navbar() {
                   <LayoutDashboard size={14} className="text-gray-400" />
                   Dashboard
                 </Link>
+
+                {/* 👇 Admin Panel link in dropdown */}
+                {isAdmin && (
+                  <Link
+                    href="/admin"
+                    onClick={() => setDropOpen(false)}
+                    className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-purple-700 hover:bg-purple-50 hover:text-purple-800 transition"
+                  >
+                    <Gauge size={14} className="text-purple-400" />
+                    Admin Panel
+                    <span className="ml-auto text-[8px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full font-bold">ADMIN</span>
+                  </Link>
+                )}
 
                 <Link
                   href="/profile"
@@ -152,13 +190,20 @@ export function Navbar() {
         <div className="space-y-2 pt-2 border-t border-gray-100">
           {/* User info strip */}
           <div className="flex items-center gap-3 py-2 px-1">
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 text-white text-xs font-bold flex items-center justify-center shrink-0">
+            <div className={`w-9 h-9 rounded-full text-white text-xs font-bold flex items-center justify-center shrink-0 ${
+              isAdmin ? 'bg-gradient-to-br from-purple-600 to-purple-700' : 'bg-gradient-to-br from-blue-600 to-blue-700'
+            }`}>
               {initials}
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-gray-900 truncate">{user?.name}</p>
               <p className="text-xs text-gray-400 truncate">{user?.email}</p>
             </div>
+            {isAdmin && (
+              <span className="text-[9px] font-bold bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full shrink-0">
+                Admin
+              </span>
+            )}
           </div>
 
           <Link
@@ -168,6 +213,18 @@ export function Navbar() {
           >
             <LayoutDashboard size={15} /> Go to Dashboard
           </Link>
+
+          {/* 👇 Admin Panel link in mobile menu */}
+          {isAdmin && (
+            <Link
+              href="/admin"
+              onClick={() => setMenuOpen(false)}
+              className="flex items-center gap-2 w-full py-2.5 px-3 bg-purple-50 text-purple-700 rounded-xl text-sm font-semibold"
+            >
+              <Gauge size={15} /> Admin Panel
+              <span className="ml-auto text-[8px] bg-purple-200 text-purple-700 px-1.5 py-0.5 rounded-full font-bold">ADMIN</span>
+            </Link>
+          )}
 
           <button
             onClick={handleLogout}

@@ -1,13 +1,8 @@
 const mongoose = require("mongoose");
 const Booking = require("../../models/Booking");
 
-const PLATFORM_FEE_RATE = 0.05; // 5% — matches checkout calculation
+const PLATFORM_FEE_RATE = 0.05;
 
-// ─────────────────────────────────────────────────────────────
-// Shared pipeline stages: join trip + passenger + driver,
-// and derive safe defaults for legacy bookings that don't yet
-// have paymentStatus / escrowStatus set.
-// ─────────────────────────────────────────────────────────────
 function buildLookupStages() {
   return [
     {
@@ -47,17 +42,6 @@ function buildLookupStages() {
   ];
 }
 
-// ─────────────────────────────────────────────────────────────
-// GET /api/admin/bookings
-//
-// Query params:
-//   search       — booking ID (suffix), passenger name, driver name, route
-//   paymentStatus — 'all' | pending | paid | failed | refunded | partially_refunded
-//   escrowStatus  — comma-separated: held,released,disputed,refunded (or 'all')
-//   dateFrom, dateTo — ISO date strings (createdAt range)
-//   minFare, maxFare — fare range
-//   page, limit
-// ─────────────────────────────────────────────────────────────
 const getBookings = async (req, res) => {
   try {
     const {
@@ -75,7 +59,6 @@ const getBookings = async (req, res) => {
     const pageNum = Math.max(parseInt(page) || 1, 1);
     const limitNum = Math.min(Math.max(parseInt(limit) || 10, 1), 100);
 
-    // ── Safe pre-match (raw fields only) ────────────────────
     const preMatch = {};
 
     if (dateFrom || dateTo) {
@@ -96,7 +79,6 @@ const getBookings = async (req, res) => {
 
     const pipeline = [{ $match: preMatch }, ...buildLookupStages()];
 
-    // ── Post-lookup match (derived/safe fields + search) ────
     const postMatchAnd = [];
 
     if (paymentStatus !== "all") {
@@ -140,13 +122,27 @@ const getBookings = async (req, res) => {
           { $limit: limitNum },
           {
             $project: {
-              tripId: 1, fromName: 1, toName: 1, fareCharged: 1, platformFee: 1,
-              status: 1, paymentStatusSafe: 1, escrowStatusSafe: 1,
-              refundAmount: 1, refundReason: 1, refundedAt: 1, escrowReleasedAt: 1,
-              createdAt: 1, seatNumber: 1, distanceKm: 1,
-              "passenger.name": 1, "passenger._id": 1,
-              "driver.name": 1, "driver._id": 1,
-              "trip.from": 1, "trip.to": 1,
+              tripId: 1,
+              fromName: 1,
+              toName: 1,
+              fareCharged: 1,
+              platformFee: 1,
+              status: 1,
+              paymentStatusSafe: 1,
+              escrowStatusSafe: 1,
+              refundAmount: 1,
+              refundReason: 1,
+              refundedAt: 1,
+              escrowReleasedAt: 1,
+              createdAt: 1,
+              seatNumber: 1,
+              distanceKm: 1,
+              "passenger.name": 1,
+              "passenger._id": 1,
+              "driver.name": 1,
+              "driver._id": 1,
+              "trip.from": 1,
+              "trip.to": 1,
             },
           },
         ],
@@ -199,10 +195,6 @@ const getBookings = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// GET /api/admin/bookings/stats
-// Returns the 5 summary cards.
-// ─────────────────────────────────────────────────────────────
 const getBookingStats = async (req, res) => {
   try {
     const now = new Date();
@@ -225,8 +217,6 @@ const getBookingStats = async (req, res) => {
       Booking.countDocuments({ createdAt: { $gte: startOfLastMonth, $lt: startOfThisMonth } }),
       Booking.countDocuments({ status: { $in: ["confirmed", "completed"] } }),
       Booking.countDocuments({ status: "cancelled" }),
-
-      // Sum of fareCharged where escrow is held (default for legacy docs)
       Booking.aggregate([
         {
           $addFields: { escrowStatusSafe: { $ifNull: ["$escrowStatus", "held"] } },
@@ -234,8 +224,6 @@ const getBookingStats = async (req, res) => {
         { $match: { escrowStatusSafe: "held" } },
         { $group: { _id: null, total: { $sum: "$fareCharged" } } },
       ]),
-
-      // Count disputed escrow
       Booking.aggregate([
         {
           $addFields: { escrowStatusSafe: { $ifNull: ["$escrowStatus", "held"] } },
@@ -243,8 +231,6 @@ const getBookingStats = async (req, res) => {
         { $match: { escrowStatusSafe: "disputed" } },
         { $count: "count" },
       ]),
-
-      // Top cancelled route
       Booking.aggregate([
         { $match: { status: "cancelled" } },
         {
@@ -256,8 +242,6 @@ const getBookingStats = async (req, res) => {
         { $sort: { count: -1 } },
         { $limit: 1 },
       ]),
-
-      // Platform revenue this month (paid bookings)
       Booking.aggregate([
         {
           $addFields: { paymentStatusSafe: { $ifNull: ["$paymentStatus", "paid"] } },
@@ -314,17 +298,10 @@ const getBookingStats = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// GET /api/admin/bookings/charts
-// Returns:
-//   bookingsPerDay — last 30 days, { date, count }
-//   revenueBreakdown — last 6 months, { month, revenue }
-// ─────────────────────────────────────────────────────────────
 const getBookingCharts = async (req, res) => {
   try {
     const now = new Date();
 
-    // ── Bookings per day (last 30 days) ─────────────────────
     const thirtyDaysAgo = new Date(now);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
     thirtyDaysAgo.setHours(0, 0, 0, 0);
@@ -351,7 +328,6 @@ const getBookingCharts = async (req, res) => {
       });
     }
 
-    // ── Revenue breakdown (last 6 months) ───────────────────
     const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
 
     const revenueAgg = await Booking.aggregate([
@@ -393,10 +369,6 @@ const getBookingCharts = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// PUT /api/admin/bookings/:id/refund
-// Body: { amount, reason }
-// ─────────────────────────────────────────────────────────────
 const processRefund = async (req, res) => {
   try {
     const { id } = req.params;
@@ -464,10 +436,6 @@ const processRefund = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// PUT /api/admin/bookings/:id/release-escrow
-// Releases held funds to the driver.
-// ─────────────────────────────────────────────────────────────
 const releaseEscrow = async (req, res) => {
   try {
     const { id } = req.params;
@@ -504,10 +472,6 @@ const releaseEscrow = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// GET /api/admin/bookings/export
-// CSV export (capped at 5000 rows), same filters as getBookings.
-// ─────────────────────────────────────────────────────────────
 const exportBookingsCsv = async (req, res) => {
   try {
     const { search = "", paymentStatus = "all", escrowStatus = "all", dateFrom, dateTo, minFare, maxFare } = req.query;

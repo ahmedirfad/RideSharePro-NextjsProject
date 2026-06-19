@@ -8,10 +8,6 @@ const poppins = Poppins({
   variable: "--font-poppins",
 })
 
-export const metadata: Metadata = {
-  title: "RideSharePro - AI-Powered Carpooling",
-  description: "Safe, affordable, and smart intercity carpooling platform",
-}
 
 export default function RootLayout({
   children,

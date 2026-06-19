@@ -17,7 +17,7 @@ interface AdminUser {
   email: string
   phone: string
   profilePhoto: string
-  role: 'DRIVER' | 'PASSENGER' | 'ADMIN'
+  role: 'USER' | 'ADMIN'  // 👈 Only USER and ADMIN
   rating: number
   totalRatings: number
   trips: number
@@ -37,9 +37,8 @@ interface Stats {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const ROLE_BADGE: Record<string, string> = {
-  DRIVER:    'bg-blue-500/15 text-blue-400 border-blue-500/20',
-  PASSENGER: 'bg-purple-500/15 text-purple-400 border-purple-500/20',
-  ADMIN:     'bg-amber-500/15 text-amber-400 border-amber-500/20',
+  USER:  'bg-blue-500/15 text-blue-400 border-blue-500/20',
+  ADMIN: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -305,7 +304,7 @@ export default function AdminUsers() {
         </div>
       </div>
 
-      {/* ── Filters — two rows so nothing overflows ─────────────────────────── */}
+      {/* ── Filters ─────────────────────────────────────────────────────────── */}
       <div className="bg-[#13172a] border border-white/8 rounded-2xl p-4 space-y-3">
 
         {/* Row 1: Search + Role + Status */}
@@ -325,6 +324,7 @@ export default function AdminUsers() {
             </div>
           </div>
 
+          {/* 👇 Role filter - only USER and ADMIN */}
           <div>
             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1.5">Role</label>
             <select
@@ -332,10 +332,9 @@ export default function AdminUsers() {
               onChange={e => { setRole(e.target.value); setPage(1) }}
               className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition appearance-none cursor-pointer"
             >
-              <option value="all"       className="bg-[#13172a]">All Roles</option>
-              <option value="driver"    className="bg-[#13172a]">Driver</option>
-              <option value="passenger" className="bg-[#13172a]">Passenger</option>
-              <option value="admin"     className="bg-[#13172a]">Admin</option>
+              <option value="all"   className="bg-[#13172a]">All Roles</option>
+              <option value="user"  className="bg-[#13172a]">User</option>
+              <option value="admin" className="bg-[#13172a]">Admin</option>
             </select>
           </div>
 
@@ -460,6 +459,7 @@ export default function AdminUsers() {
                     <span className="text-xs text-gray-400 whitespace-nowrap">{u.phone || '—'}</span>
                   </td>
 
+                  {/* 👇 Role badge - only USER or ADMIN */}
                   <td className="px-4 py-3.5">
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${ROLE_BADGE[u.role] || ''}`}>
                       {u.role}

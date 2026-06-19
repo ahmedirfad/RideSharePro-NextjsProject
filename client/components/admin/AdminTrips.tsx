@@ -30,7 +30,7 @@ interface Trip {
   status: 'Ongoing' | 'Upcoming' | 'Cancelled' | 'Completed'
   rawStatus: string
   womenOnly: boolean
-  vehicleInfo: string  // 👈 ADDED
+  vehicleInfo: string
 }
 
 interface TripStats {
@@ -350,8 +350,8 @@ export default function Trips() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[960px]">
             <thead>
-            <tr className="border-b border-white/5 text-[10px] text-gray-500 uppercase tracking-widest font-bold">
-              <th className="px-5 py-3 text-left w-10">
+              <tr className="border-b border-white/5 text-[10px] text-gray-500 uppercase tracking-widest font-bold">
+                <th className="px-5 py-3 text-left w-10">
                   <input
                     type="checkbox"
                     checked={selected.length === trips.length && trips.length > 0}
@@ -366,7 +366,7 @@ export default function Trips() {
                 <th className="px-4 py-3 text-left">Seats</th>
                 <th className="px-4 py-3 text-left">Distance</th>
                 <th className="px-4 py-3 text-left">Fare</th>
-                <th className="px-4 py-3 text-left">Vehicle</th>  {/* 👈 NEW COLUMN */}
+                <th className="px-4 py-3 text-left">Vehicle</th>
                 <th className="px-4 py-3 text-left">Status</th>
                 <th className="px-4 py-3 text-left">Actions</th>
               </tr>
@@ -399,7 +399,6 @@ export default function Trips() {
                     key={trip.id}
                     className={`group transition-colors ${isSelected ? 'bg-blue-500/5' : 'hover:bg-white/[0.02]'}`}
                   >
-                    {/* Checkbox */}
                     <td className="px-5 py-4">
                       <input
                         type="checkbox"
@@ -409,14 +408,12 @@ export default function Trips() {
                       />
                     </td>
 
-                    {/* Trip ID */}
                     <td className="px-4 py-4">
                       <span className="text-[11px] font-mono text-gray-500">
                         #{String(trip.id).slice(-8).toUpperCase()}
                       </span>
                     </td>
 
-                    {/* Route */}
                     <td className="px-4 py-4">
                       <p className="text-xs font-semibold text-gray-200 whitespace-nowrap">
                         {trip.route.from} → {trip.route.to}
@@ -428,7 +425,6 @@ export default function Trips() {
                       )}
                     </td>
 
-                    {/* Driver */}
                     <td className="px-4 py-4">
                       <div className="flex items-center gap-2">
                         <div className="relative shrink-0">
@@ -448,7 +444,6 @@ export default function Trips() {
                       </div>
                     </td>
 
-                    {/* Date & Time */}
                     <td className="px-4 py-4">
                       <p className="text-xs text-gray-300 whitespace-nowrap">
                         {new Date(trip.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -456,7 +451,6 @@ export default function Trips() {
                       <p className="text-[10px] text-gray-500 mt-0.5">{trip.time}</p>
                     </td>
 
-                    {/* Seats */}
                     <td className="px-4 py-4">
                       <p className="text-xs font-semibold text-gray-300 mb-1.5">
                         {trip.seats.booked}/{trip.seats.total}
@@ -464,31 +458,24 @@ export default function Trips() {
                       <SeatBar booked={trip.seats.booked} total={trip.seats.total} status={trip.status} />
                     </td>
 
-                    {/* Distance */}
                     <td className="px-4 py-4">
                       <span className="text-xs text-gray-400">{trip.distanceKm} km</span>
                     </td>
 
-                    {/* Fare */}
                     <td className="px-4 py-4">
                       <span className="text-xs font-bold text-gray-200">₹{trip.farePerSeat}/seat</span>
                     </td>
 
-                    {/* 👇 VEHICLE COLUMN */}
                     <td className="px-4 py-4">
-                      <span className="text-xs text-gray-400">
-                        {trip.vehicleInfo || '—'}
-                      </span>
+                      <span className="text-xs text-gray-400">{trip.vehicleInfo || '—'}</span>
                     </td>
 
-                    {/* Status */}
                     <td className="px-4 py-4">
                       <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${sc.pill}`}>
                         {trip.status}
                       </span>
                     </td>
 
-                    {/* Actions */}
                     <td className="px-4 py-4">
                       <div className="flex items-center gap-1">
                         <Link href={`/admin/trips/${trip.id}`}>

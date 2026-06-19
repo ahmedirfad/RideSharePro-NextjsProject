@@ -6,8 +6,8 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Users, Car, BookOpen, Wallet,
   AlertTriangle, BarChart2, Settings,
-  LogOut, Bell, Search, ChevronDown, Menu, X,
-  Zap, ChevronLeft, ChevronRight,
+  LogOut, Bell, ChevronDown, Menu, X,
+  Zap, ChevronLeft, ChevronRight, ArrowLeft,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import api from '@/lib/api'
@@ -18,7 +18,7 @@ const NAV = [
   { icon: Car,             label: 'Trips',         href: '/admin/trips'     },
   { icon: BookOpen,        label: 'Bookings',      href: '/admin/bookings'  },
   { icon: Wallet,          label: 'Earnings',      href: '/admin/earnings'  },
-  { icon: AlertTriangle,   label: 'Disputes',      href: '/admin/disputes', badge: 7 },
+  { icon: AlertTriangle,   label: 'Disputes',      href: '/admin/disputes'  },
   { icon: BarChart2,       label: 'Analytics',     href: '/admin/analytics' },
   { icon: Settings,        label: 'Settings',      href: '/admin/settings'  },
 ]
@@ -170,6 +170,19 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         .main-scroll::-webkit-scrollbar-thumb:hover {
           background: #334155;
         }
+        .switch-btn {
+          transition: all 0.2s;
+        }
+        .switch-btn:hover {
+          background: rgba(255,255,255,0.05);
+        }
+        .topbar-title {
+          font-family: 'Outfit', sans-serif;
+          font-weight: 700;
+          font-size: 15px;
+          color: white;
+          letter-spacing: 0.3px;
+        }
       `}</style>
 
       {/* ── SIDEBAR ── */}
@@ -234,17 +247,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             </div>
           </nav>
 
-          {/* Pro badge */}
-          {!collapsed && (
-            <div className="mx-3 mb-2 bg-gradient-to-br from-blue-600/20 to-blue-800/20 border border-blue-500/20 rounded-xl p-3 shrink-0">
-              <div className="flex items-center gap-1.5 mb-1">
-                <Zap size={12} className="text-yellow-400" />
-                <span className="text-[10px] font-black uppercase tracking-wider text-yellow-400">Enterprise</span>
-              </div>
-              <p className="text-[10px] text-gray-400 leading-relaxed">Full platform access · All features unlocked</p>
-            </div>
-          )}
-
           {/* Admin user - dynamic */}
           <div className={`p-3 border-t border-white/5 flex items-center gap-3 shrink-0 ${collapsed ? 'justify-center' : ''}`}>
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white font-bold text-xs shrink-0">
@@ -280,23 +282,21 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             <Menu size={20} />
           </button>
 
-          {/* Page title */}
-          <div className="hidden sm:block">
-            <p className="text-sm font-bold text-white" style={{ fontFamily: "'Outfit',sans-serif" }}>{currentPage}</p>
+          {/* Page title - centered */}
+          <div className="flex-1 flex items-center justify-center">
+            <p className="topbar-title">{currentPage}</p>
           </div>
 
-          {/* Search */}
-          <div className="flex-1 max-w-md mx-auto">
-            <div className="flex items-center gap-2 bg-white/5 border border-white/8 rounded-xl px-3 py-2 focus-within:border-blue-500/50 focus-within:bg-white/8 transition">
-              <Search size={14} className="text-gray-500 shrink-0" />
-              <input placeholder="Search fleet, users, or trips (Cmd+K)"
-                className="bg-transparent border-none outline-none text-sm text-gray-300 placeholder-gray-600 flex-1 min-w-0" />
-              <span className="text-[10px] text-gray-600 bg-white/5 px-1.5 py-0.5 rounded font-mono shrink-0">⌘K</span>
-            </div>
-          </div>
+          <div className="flex items-center gap-2 ml-auto shrink-0">
+            {/* Back to App button */}
+            <Link href="/dashboard">
+              <button className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-gray-300 hover:bg-white/10 hover:text-white transition text-xs font-medium switch-btn">
+                <ArrowLeft size={13} />
+                <span className="hidden sm:inline">Back to App</span>
+              </button>
+            </Link>
 
-          <div className="flex items-center gap-2 ml-auto">
-            {/* Notifications - same as before */}
+            {/* Notif */}
             <div ref={notifRef} className="relative">
               <button onClick={() => { setNotifOpen(!notifOpen); setUserOpen(false) }}
                 className="relative w-9 h-9 flex items-center justify-center bg-white/5 border border-white/8 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition">

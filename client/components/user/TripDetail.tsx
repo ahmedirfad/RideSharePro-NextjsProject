@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
+import CarSeatLayout from '@/components/user/CarSeatLayout'
 
 const TripDetailMap = dynamic(() => import('@/components/maps/TripDetailMap'), {
   ssr: false,
@@ -57,7 +58,7 @@ interface TripData {
   totalDistanceKm?: number
   farePerKm?: number
   waypoints?: Waypoint[]
-  vehicleInfo?: string  // 👈 ADDED
+  vehicleInfo?: string
   driverId: {
     _id: string
     name: string
@@ -279,8 +280,12 @@ export default function TripDetailsPage() {
 
   // Calculate total potential earnings (full trip)
   const totalPotential = trip.pricePerSeat * trip.totalSeats
-  // Calculate actual earnings (from bookings - you can add this later)
-  const totalEarned = 0 // Will be calculated from bookings
+
+  // Prepare seat map for CarSeatLayout component
+  const seatMapForLayout = seatMap?.seatMap.map(seat => ({
+    seatNumber: seat.seatNumber,
+    available: seat.available
+  })) || []
 
   return (
     <div className="max-w-5xl mx-auto space-y-5 pb-10">
@@ -472,14 +477,13 @@ export default function TripDetailsPage() {
             )}
           </div>
 
-          {/* 👇 VEHICLE & AMENITIES - UPDATED WITH TRIP VEHICLE INFO */}
+          {/* Vehicle & Amenities */}
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
             <h2 className="font-semibold text-gray-900 mb-4">Vehicle & Amenities</h2>
             
-            {/* Show actual vehicle info from trip if available */}
             {trip.vehicleInfo ? (
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4">
-                <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">🚗 Vehicle</p>
+                <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">Vehicle</p>
                 <p className="text-sm font-semibold text-gray-800">{trip.vehicleInfo}</p>
               </div>
             ) : (
@@ -495,7 +499,7 @@ export default function TripDetailsPage() {
             )}
 
             <div className="grid grid-cols-3 gap-2">
-              {['❄️ AC', '🎵 Music', '⚡ USB Charging', '🧳 Luggage OK', '🐾 No Pets', '🚭 No Smoking'].map(item => (
+              {['AC', 'Music System', 'USB Charging', 'Luggage Space', 'No Pets', 'No Smoking'].map(item => (
                 <div key={item} className="flex items-center gap-1.5 bg-gray-50 rounded-lg px-2.5 py-2">
                   <span className="text-xs text-gray-600 font-medium">{item}</span>
                 </div>
@@ -510,23 +514,13 @@ export default function TripDetailsPage() {
               {loadingSeatMap ? (
                 <div className="flex justify-center py-8"><Loader2 size={24} className="text-blue-500 animate-spin" /></div>
               ) : seatMap ? (
-                <>
-                  <div className="grid grid-cols-4 gap-3 mb-4">
-                    {seatMap.seatMap.map(seat => (
-                      <button key={seat.seatNumber}
-                        onClick={() => seat.available && setSelectedSeat(seat.seatNumber)}
-                        disabled={!seat.available}
-                        className={`py-3 rounded-xl text-sm font-semibold transition-all
-                          ${!seat.available ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : ''}
-                          ${seat.available && selectedSeat === seat.seatNumber ? 'bg-blue-600 text-white ring-2 ring-blue-300' : ''}
-                          ${seat.available && selectedSeat !== seat.seatNumber ? 'bg-blue-50 text-blue-700 hover:bg-blue-100' : ''}
-                        `}>
-                        Seat {seat.seatNumber}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-xs text-gray-400 text-center">{seatMap.freeCount} seats available for this segment</p>
-                </>
+                <CarSeatLayout
+                  totalSeats={trip.totalSeats}
+                  seatMap={seatMapForLayout}
+                  selectedSeat={selectedSeat}
+                  setSelectedSeat={setSelectedSeat}
+                  womenOnly={trip.womenOnly}
+                />
               ) : (
                 <p className="text-center text-gray-500 text-sm py-4">Select boarding and alighting points first</p>
               )}
@@ -590,7 +584,7 @@ export default function TripDetailsPage() {
                 )}
               </>
             ) : (
-              /* Host View - Show price summary differently */
+              /* Host View */
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between text-gray-600">
                   <span>Price per Seat</span>

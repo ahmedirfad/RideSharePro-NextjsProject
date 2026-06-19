@@ -7,6 +7,7 @@ import {
   LayoutDashboard, Calendar, Wallet, User,
   Settings, HelpCircle, Car, Search, Bell, LogOut,
   ChevronDown, Menu, X, Star, Shield, MessageSquare, Loader2,
+  Gauge,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
 import api from '@/lib/api'
@@ -95,6 +96,9 @@ export default function UserLayout({ children }: { children: ReactNode }) {
   }, [])
 
   const totalUnread = NOTIFICATIONS.filter(n => n.unread).length + MESSAGES.filter(m => m.unread).length
+
+  // Check if user is admin
+  const isAdmin = userData?.role === 'admin' || user?.role === 'admin'
 
   const getUserInitials = () => {
     const name = userData?.name || user?.name || 'User'
@@ -272,7 +276,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                 )}
               </div>
 
-              {/* User Menu */}
+              {/* User Menu - with Admin Panel access */}
               <div ref={userRef} className="relative shrink-0">
                 <button
                   onClick={() => { setUserOpen(!userOpen); setNotifOpen(false); setMsgOpen(false) }}
@@ -285,10 +289,15 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                   <ChevronDown size={12} className={`text-gray-400 transition-transform hidden sm:block ${userOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {userOpen && (
-                  <div className="dropdown-anim absolute right-0 top-[calc(100%+8px)] w-48 bg-white border border-gray-100 rounded-2xl shadow-xl overflow-hidden z-50">
+                  <div className="dropdown-anim absolute right-0 top-[calc(100%+8px)] w-56 bg-white border border-gray-100 rounded-2xl shadow-xl overflow-hidden z-50">
                     <div className="px-4 py-3 border-b border-gray-100">
                       <p className="font-semibold text-gray-900 text-sm">{getUserName()}</p>
                       <p className="text-xs text-gray-400 truncate">{getUserEmail()}</p>
+                      {isAdmin && (
+                        <span className="inline-block mt-1 text-[9px] font-bold bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">
+                          Admin
+                        </span>
+                      )}
                     </div>
                     {userMenuItems.map(item => (
                       <Link key={item.href} href={item.href} onClick={() => setUserOpen(false)}
@@ -298,7 +307,17 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                       </Link>
                     ))}
                     <div className="border-t border-gray-100">
-                      {/* ✅ UPDATED LOGOUT BUTTON */}
+                      {/* 👇 Admin Panel - near profile logo area */}
+                      {isAdmin && (
+                        <Link href="/admin" onClick={() => setUserOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm text-purple-700 hover:bg-purple-50 transition">
+                          <Gauge size={15} className="text-purple-400" />
+                          Admin Panel
+                          <span className="ml-auto text-[8px] font-bold bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full">
+                            ADMIN
+                          </span>
+                        </Link>
+                      )}
                       <button 
                         onClick={async () => {
                           try {
@@ -344,6 +363,16 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                 </Link>
               )
             })}
+            {isAdmin && (
+              <Link href="/admin" onClick={() => setMobileOpen(false)}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-purple-600 hover:bg-purple-50 transition font-semibold">
+                <Gauge size={16} />
+                Admin Panel
+                <span className="ml-auto text-[8px] font-bold bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full">
+                  ADMIN
+                </span>
+              </Link>
+            )}
             <Link href="/messages" onClick={() => setMobileOpen(false)}
               className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition">
               <MessageSquare size={16} />

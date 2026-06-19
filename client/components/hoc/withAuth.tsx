@@ -7,7 +7,7 @@ import { Loader2 } from 'lucide-react'
 
 export function withAuth<P extends object>(
   WrappedComponent: React.ComponentType<P>,
-  requireAdmin: boolean = false  // ← new param
+  requireAdmin: boolean = false 
 ) {
   return function AuthenticatedComponent(props: P) {
     const router = useRouter()
@@ -20,9 +20,8 @@ export function withAuth<P extends object>(
           return
         }
         
-        // ✅ Check if admin access is required
         if (requireAdmin && user?.role !== 'admin') {
-          router.replace('/dashboard')  // or '/403' for unauthorized
+          router.replace('/dashboard')  
         }
       }
     }, [isAuthenticated, _hasHydrated, user, router])
@@ -39,7 +38,6 @@ export function withAuth<P extends object>(
       return null
     }
 
-    // ✅ If admin required and user is not admin, don't render
     if (requireAdmin && user?.role !== 'admin') {
       return null
     }

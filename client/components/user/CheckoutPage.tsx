@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
+import CarSeatLayout from '@/components/user/CarSeatLayout'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Step = 'review' | 'payment' | 'confirmed'
@@ -47,7 +48,7 @@ function TripSummary({ trip, fromName, toName, seatNumber, distanceKm }: {
     return name?.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) || 'DR'
   }
 
-  const estimatedDuration = Math.round(distanceKm / 60 * 60) // Assuming 60 km/h avg
+  const estimatedDuration = Math.round(distanceKm / 60 * 60)
 
   return (
     <SectionCard>
@@ -121,7 +122,7 @@ function TripSummary({ trip, fromName, toName, seatNumber, distanceKm }: {
           </div>
         </div>
 
-        {/* 👇 VEHICLE - Show actual vehicle info from trip */}
+        {/* Vehicle */}
         <div className="flex items-center gap-2.5">
           <Car size={13} className="text-gray-400 shrink-0" />
           {trip.vehicleInfo ? (
@@ -342,7 +343,7 @@ function ConfirmationScreen({ bookingId, trip, fromName, toName, seatNumber, far
       <h2 className="text-3xl font-black text-gray-900 mb-2" style={{ fontFamily: "'Outfit',sans-serif" }}>
         Booking Confirmed!
       </h2>
-      <p className="text-gray-500 text-sm mb-1">Your seat is reserved. Safe travels! 🎉</p>
+      <p className="text-gray-500 text-sm mb-1">Your seat is reserved. Safe travels!</p>
       <p className="text-xs text-gray-400 mb-8">Booking ID: <span className="font-mono font-bold text-gray-600">{bookingId}</span></p>
 
       <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm w-full max-w-sm mb-6 text-left">
@@ -384,7 +385,6 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
   const searchParams = useSearchParams()
   const { isAuthenticated } = useAuthStore()
   
-  // Get segment parameters from URL
   const fromOrder = searchParams.get('fromOrder')
   const toOrder = searchParams.get('toOrder')
   const seatNumber = searchParams.get('seatNumber')
@@ -401,8 +401,8 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [bookingId, setBookingId] = useState('')
+  const [seatMap, setSeatMap] = useState<any[]>([])
 
-  // Validate required parameters
   useEffect(() => {
     if (!fromOrder || !toOrder || !seatNumber || !segmentFare) {
       setError('Missing booking information. Please go back and select your journey.')
@@ -436,6 +436,26 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
     fetchTrip()
   }, [tripId])
 
+  // Fetch seat map to show selected seat in layout
+  useEffect(() => {
+    if (!trip || !fromOrder || !toOrder) return
+
+    const fetchSeatMap = async () => {
+      try {
+        const res = await api.get(
+          `/trips/${tripId}/seat-map?fromOrder=${fromOrder}&toOrder=${toOrder}`
+        )
+        if (res.data.success) {
+          setSeatMap(res.data.data.seatMap || [])
+        }
+      } catch (e) {
+        console.error('Failed to fetch seat map:', e)
+      }
+    }
+
+    fetchSeatMap()
+  }, [trip, fromOrder, toOrder, tripId])
+
   const handlePromo = (discount: number) => {
     if (discount > 0) { setPromoApplied(true); setPromoDiscount(discount) }
     else { setPromoApplied(false); setPromoDiscount(0) }
@@ -453,7 +473,6 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
     setError('')
     
     try {
-      // Call the segment booking API
       const response = await api.post(`/trips/${tripId}/book`, {
         fromOrder: parseInt(fromOrder),
         toOrder: parseInt(toOrder),
@@ -513,6 +532,12 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
   const platformFee = Math.round(fare * 0.05)
   const total = fare + platformFee - (promoApplied ? promoDiscount : 0)
   const distance = parseFloat(segmentDistance || '0')
+
+  // Prepare seat map for CarSeatLayout
+  const seatMapForLayout = seatMap.map(seat => ({
+    seatNumber: seat.seatNumber,
+    available: seat.available
+  }))
 
   return (
     <>
@@ -581,9 +606,24 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
                     distanceKm={distance}
                   />
                 </div>
-                <div className="fade-3"><PromoCode onApply={handlePromo} /></div>
-                <div className="fade-4"><TrustBadges /></div>
-                <div className="fade-5">
+                {/* Car Seat Layout - Showing selected seat */}
+                <div className="fade-3">
+                  <SectionCard>
+                    <SectionHeader title="Your Seat" sub="Seat {seatNumber} selected" />
+                    <div className="p-4">
+                      <CarSeatLayout
+                        totalSeats={trip.totalSeats}
+                        seatMap={seatMapForLayout}
+                        selectedSeat={parseInt(seatNumber || '0')}
+                        setSelectedSeat={() => {}} // Disabled in checkout
+                        womenOnly={trip.womenOnly}
+                      />
+                    </div>
+                  </SectionCard>
+                </div>
+                <div className="fade-4"><PromoCode onApply={handlePromo} /></div>
+                <div className="fade-5"><TrustBadges /></div>
+                <div className="fade-6">
                   <button
                     onClick={() => setStep('payment')}
                     className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl transition shadow-lg shadow-blue-200 flex items-center justify-center gap-2 text-[15px]">
@@ -661,6 +701,15 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
                         <Car size={10} className="text-gray-400" /> {trip.vehicleInfo}
                       </p>
                     )}
+                    {/* Mini car seat indicator */}
+                    <div className="mt-3 flex justify-center">
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xs">
+                          {seatNumber}
+                        </div>
+                        <span className="text-[10px] text-gray-500">Your seat</span>
+                      </div>
+                    </div>
                   </div>
                 </SectionCard>
               </div>
