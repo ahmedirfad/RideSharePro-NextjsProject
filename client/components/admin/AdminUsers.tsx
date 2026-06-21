@@ -8,6 +8,8 @@ import {
   CheckCircle, Eye, Calendar,
 } from 'lucide-react'
 import api from '@/lib/api'
+import { useSocket } from '@/hooks/useSocket'
+import { useNotifications } from '@/hooks/useNotifications'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AdminUser {
@@ -17,7 +19,7 @@ interface AdminUser {
   email: string
   phone: string
   profilePhoto: string
-  role: 'USER' | 'ADMIN'  // 👈 Only USER and ADMIN
+  role: 'USER' | 'ADMIN'
   rating: number
   totalRatings: number
   trips: number
@@ -67,6 +69,7 @@ function AddUserModal({
   const [role,       setRole]       = useState('user')
   const [submitting, setSubmitting] = useState(false)
   const [error,      setError]      = useState('')
+  const socket = useSocket()
 
   if (!open) return null
 
@@ -80,6 +83,17 @@ function AddUserModal({
     try {
       const res = await api.post('/admin/users', { name, email, phone, password, gender, role })
       if (res.data.success) {
+        // ─── Send notification via Socket.IO ──────────────────────────────
+        if (socket) {
+          socket.emit('notification:send', {
+            userId: 'admin',
+            type: 'new_user',
+            title: 'New User Added',
+            body: `Admin created account for ${name}`,
+            link: `/admin/users`,
+            meta: { name, email, role },
+          })
+        }
         onCreated()
         onClose()
         setName(''); setEmail(''); setPhone(''); setPassword('')
@@ -176,8 +190,51 @@ export default function AdminUsers() {
   const [addOpen,     setAddOpen]     = useState(false)
   const [suspendingId,setSuspendingId]= useState<string | null>(null)
   const [exporting,   setExporting]   = useState(false)
+  const [newUserAlert, setNewUserAlert] = useState(false)
 
-  // Filters
+  const socket = useSocket()
+  const { notifications } = useNotifications()
+
+  // ─── Real-time user updates ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!socket) return
+
+    const handleNewUser = () => {
+      fetchUsers()
+      setNewUserAlert(true)
+      setTimeout(() => setNewUserAlert(false), 3000)
+    }
+
+    const handleUserSuspended = () => {
+      fetchUsers()
+    }
+
+    const handleUserReactivated = () => {
+      fetchUsers()
+    }
+
+    socket.on('user:new', handleNewUser)
+    socket.on('user:suspended', handleUserSuspended)
+    socket.on('user:reactivated', handleUserReactivated)
+
+    return () => {
+      socket.off('user:new', handleNewUser)
+      socket.off('user:suspended', handleUserSuspended)
+      socket.off('user:reactivated', handleUserReactivated)
+    }
+  }, [socket])
+
+  // ─── Check notifications for user-related updates ──────────────────────────
+  useEffect(() => {
+    if (notifications && notifications.length > 0) {
+      const latestNotif = notifications[0]
+      if (latestNotif.type === 'new_user' || latestNotif.type === 'user_suspended') {
+        fetchUsers()
+      }
+    }
+  }, [notifications])
+
+  // ─── Filters ─────────────────────────────────────────────────────────────────
   const [searchInput, setSearchInput] = useState('')
   const [search,      setSearch]      = useState('')
   const [role,        setRole]        = useState('all')
@@ -239,6 +296,19 @@ export default function AdminUsers() {
             ? { ...u, isSuspended: willSuspend, status: willSuspend ? 'SUSPENDED' : 'ACTIVE' }
             : u
         ))
+        
+        // ─── Send notification via Socket.IO ──────────────────────────────
+        if (socket) {
+          const event = willSuspend ? 'user:suspended' : 'user:reactivated'
+          socket.emit('notification:send', {
+            userId: 'admin',
+            type: willSuspend ? 'user_suspended' : 'user_reactivated',
+            title: willSuspend ? 'User Suspended' : 'User Reactivated',
+            body: `${user.name} has been ${willSuspend ? 'suspended' : 'reactivated'}`,
+            link: `/admin/users/${user.id}`,
+            meta: { userId: user.id, suspended: willSuspend },
+          })
+        }
       }
     } catch (err: any) {
       alert(err?.response?.data?.message || 'Failed to update user status')
@@ -292,6 +362,11 @@ export default function AdminUsers() {
           <p className="text-xs text-gray-500 mt-0.5">Manage and monitor platform participants across all regions.</p>
         </div>
         <div className="flex items-center gap-2">
+          {newUserAlert && (
+            <span className="text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-full animate-pulse">
+              User list updated
+            </span>
+          )}
           <button onClick={handleExport} disabled={exporting}
             className="flex items-center gap-1.5 px-3 py-2 bg-white/5 border border-white/8 hover:bg-white/10 text-gray-300 text-xs font-semibold rounded-xl transition disabled:opacity-50">
             {exporting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
@@ -324,7 +399,7 @@ export default function AdminUsers() {
             </div>
           </div>
 
-          {/* 👇 Role filter - only USER and ADMIN */}
+          {/* Role filter - only USER and ADMIN */}
           <div>
             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1.5">Role</label>
             <select
@@ -459,7 +534,6 @@ export default function AdminUsers() {
                     <span className="text-xs text-gray-400 whitespace-nowrap">{u.phone || '—'}</span>
                   </td>
 
-                  {/* 👇 Role badge - only USER or ADMIN */}
                   <td className="px-4 py-3.5">
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${ROLE_BADGE[u.role] || ''}`}>
                       {u.role}

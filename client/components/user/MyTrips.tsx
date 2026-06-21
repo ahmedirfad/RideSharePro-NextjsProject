@@ -10,6 +10,8 @@ import {
 } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
+import { useSocket } from '@/hooks/useSocket'
+import { useNotifications } from '@/hooks/useNotifications'
 
 // Types
 interface Passenger {
@@ -22,6 +24,8 @@ interface Passenger {
 
 interface Trip {
   id: string
+  tripId?: string
+  bookingId?: string
   route: string
   segment?: string
   fromName?: string
@@ -40,8 +44,7 @@ interface Trip {
   driver?: { name: string; avatar: string; rating: number }
   canReview?: boolean
   canTrack?: boolean
-  tripId?: string
-  vehicleInfo?: string  // 👈 ADDED
+  vehicleInfo?: string
 }
 
 const statusConfig = {
@@ -59,7 +62,10 @@ const roleConfig = {
 
 export default function MyTrips() {
   const router = useRouter()
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, user } = useAuthStore()
+  const socket = useSocket()
+  const { notifications } = useNotifications()
+  
   const [activeTab, setActiveTab] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -71,6 +77,7 @@ export default function MyTrips() {
   const [ratingComment, setRatingComment] = useState('')
   const [submittingRating, setSubmittingRating] = useState(false)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const [tripUpdateAlert, setTripUpdateAlert] = useState(false)
 
   const fetchTrips = async () => {
     if (!isAuthenticated) {
@@ -87,7 +94,8 @@ export default function MyTrips() {
       if (response.data.success) {
         const allTrips = response.data.data.all || []
         
-        const formattedTrips: Trip[] = allTrips.map((trip: any) => {
+        // ✅ FIX: Generate unique keys for each trip
+        const formattedTrips: Trip[] = allTrips.map((trip: any, index: number) => {
           let fromName = trip.fromName || ''
           let toName   = trip.toName   || ''
 
@@ -97,9 +105,16 @@ export default function MyTrips() {
             toName   = toName   || parts[1] || ''
           }
 
+          // ✅ Generate unique key using tripId + bookingId + index
+          const baseId = trip.tripId || trip.id || `trip-${index}`
+          const uniqueId = trip.bookingId 
+            ? `${baseId}-${trip.bookingId}` 
+            : `${baseId}-${index}`
+
           return {
-            id:          trip.tripId || trip.id,
+            id:          uniqueId,
             tripId:      trip.tripId || trip.id,
+            bookingId:   trip.bookingId || null,
             route:       trip.route,
             segment:     trip.role === 'GUEST'
                            ? (fromName && toName ? `${fromName} → ${toName}` : trip.route)
@@ -120,7 +135,7 @@ export default function MyTrips() {
             driver:      trip.driver,
             canReview:   trip.canReview,
             canTrack:    trip.status === 'ONGOING',
-            vehicleInfo: trip.vehicleInfo || '',  // 👈 ADDED
+            vehicleInfo: trip.vehicleInfo || '',
           }
         })
         
@@ -137,6 +152,53 @@ export default function MyTrips() {
   useEffect(() => {
     fetchTrips()
   }, [isAuthenticated])
+
+  // ─── Real-time trip updates via Socket.IO ──────────────────────────────────
+  useEffect(() => {
+    if (!socket) return
+
+    const handleTripUpdate = (data: any) => {
+      fetchTrips()
+      setTripUpdateAlert(true)
+      setTimeout(() => setTripUpdateAlert(false), 3000)
+    }
+
+    const handleNewBooking = (data: any) => {
+      fetchTrips()
+      setTripUpdateAlert(true)
+      setTimeout(() => setTripUpdateAlert(false), 3000)
+    }
+
+    const handleTripCancelled = (data: any) => {
+      fetchTrips()
+      setTripUpdateAlert(true)
+      setTimeout(() => setTripUpdateAlert(false), 3000)
+    }
+
+    socket.on('trip:update', handleTripUpdate)
+    socket.on('booking:new', handleNewBooking)
+    socket.on('trip:cancelled', handleTripCancelled)
+
+    return () => {
+      socket.off('trip:update', handleTripUpdate)
+      socket.off('booking:new', handleNewBooking)
+      socket.off('trip:cancelled', handleTripCancelled)
+    }
+  }, [socket])
+
+  // ─── Check notifications for trip-related updates ──────────────────────────
+  useEffect(() => {
+    if (notifications && notifications.length > 0) {
+      const latestNotif = notifications[0]
+      if (
+        latestNotif.type === 'booking_confirmed' || 
+        latestNotif.type === 'trip_cancelled' || 
+        latestNotif.type === 'trip_update'
+      ) {
+        fetchTrips()
+      }
+    }
+  }, [notifications])
 
   const tabs = [
     { id: 'all', label: 'All Trips', count: trips.length },
@@ -165,8 +227,23 @@ export default function MyTrips() {
       
       if (response.data.success) {
         setTrips(prev => prev.map(t => 
-          t.id === tripId ? { ...t, status: 'CANCELLED' as Trip['status'] } : t
+          t.tripId === tripId ? { ...t, status: 'CANCELLED' as Trip['status'] } : t
         ))
+        
+        if (socket) {
+          const trip = trips.find(t => t.tripId === tripId)
+          if (trip?.role === 'HOST') {
+            socket.emit('notification:send', {
+              userId: 'admin',
+              type: 'trip_cancelled',
+              title: 'Trip Cancelled',
+              body: `Trip from ${trip.route} has been cancelled`,
+              link: `/trips`,
+              meta: { tripId },
+            })
+          }
+        }
+        
         alert('Trip cancelled successfully')
       }
     } catch (error: any) {
@@ -209,7 +286,7 @@ export default function MyTrips() {
     
     const headers = ['ID', 'Journey', 'Segment', 'Role', 'Seat', 'Date', 'Time', 'Status', 'Amount']
     const csvData = filteredTrips.map(t => [
-      t.id.slice(-8), 
+      (t.tripId || t.id).slice(-8), 
       t.route, 
       t.segment || t.route, 
       t.role, 
@@ -252,8 +329,17 @@ export default function MyTrips() {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">My Trips</h1>
-        <p className="text-gray-500 text-sm mt-1">Manage your hosted and booked trips</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">My Trips</h1>
+            <p className="text-gray-500 text-sm mt-1">Manage your hosted and booked trips</p>
+          </div>
+          {tripUpdateAlert && (
+            <span className="text-xs font-semibold text-green-600 bg-green-50 border border-green-200 px-3 py-1.5 rounded-full animate-pulse">
+              Trip updated
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Error message */}
@@ -360,13 +446,12 @@ export default function MyTrips() {
           const StatusIcon = statusConfig[trip.status]?.icon || AlertCircle
           const status = statusConfig[trip.status] || { label: trip.status, color: 'bg-gray-100 text-gray-600' }
           const role = roleConfig[trip.role] || { label: trip.role, color: 'bg-gray-100 text-gray-600' }
-          const isCancelling = cancellingId === trip.id
+          const isCancelling = cancellingId === trip.tripId
           const isGuest = trip.role === 'GUEST'
 
           // Extract numeric amount from string (e.g., "₹160" -> 160)
           const numericAmount = parseInt(trip.amount.replace('₹', '')) || 0
 
-          // ─── FIX B: Fixed detailLink construction with guestFare ───────────────
           const detailLink = (() => {
             if (!isGuest) {
               return `/trip/${trip.tripId || trip.id}?returnTo=/trips`
@@ -402,7 +487,7 @@ export default function MyTrips() {
                 {/* Header Row */}
                 <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-gray-400 font-mono">{trip.id.slice(-8)}</span>
+                    <span className="text-xs text-gray-400 font-mono">{(trip.tripId || trip.id).slice(-8)}</span>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${role.color}`}>
                       {role.label}
                     </span>
@@ -449,7 +534,7 @@ export default function MyTrips() {
                   </div>
                 </div>
 
-                {/* 👇 VEHICLE INFO */}
+                {/* Vehicle Info */}
                 {trip.vehicleInfo && (
                   <div className="mb-3 flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-1.5 border border-gray-100">
                     <Car size={13} className="text-gray-400" />
@@ -508,13 +593,13 @@ export default function MyTrips() {
                     <p className="text-lg font-bold text-gray-900">{trip.amount}</p>
                     <div className="flex gap-2 mt-1">
                       {trip.canReview && trip.status === 'COMPLETED' && (
-                        <button onClick={() => setRatingTripId(trip.id)}
+                        <button onClick={() => setRatingTripId(trip.tripId || trip.id)}
                           className="flex items-center gap-1 px-3 py-1 bg-yellow-50 text-yellow-700 rounded-lg text-xs font-medium hover:bg-yellow-100 transition">
                           <Star size={12} /> Rate Trip
                         </button>
                       )}
                       {(trip.status === 'UPCOMING' || trip.status === 'CONFIRMED') && (
-                        <button onClick={() => handleCancel(trip.id)} disabled={isCancelling}
+                        <button onClick={() => handleCancel(trip.tripId || trip.id)} disabled={isCancelling}
                           className="px-3 py-1 text-red-600 text-xs hover:underline disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1">
                           {isCancelling ? <Loader2 size={10} className="animate-spin" /> : null}
                           Cancel

@@ -139,6 +139,7 @@
     "simple-update-notifier": "^2.0.0",
     "socket.io": "^4.8.3",
     "socket.io-adapter": "^2.5.7",
+    "socket.io-client": "^4.8.3",
     "socket.io-parser": "^4.2.6",
     "sparse-bitfield": "^3.0.3",
     "statuses": "^2.0.2",
@@ -182,6 +183,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.9.1",
     "@types/nodemailer": "^8.0.0",
+    "@types/socket.io": "^3.0.1",
     "ts-node": "^10.9.2",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3"

@@ -10,6 +10,8 @@ import {
   Users, MapPin, AlertTriangle
 } from 'lucide-react'
 import api from '@/lib/api'
+import { useSocket } from '@/hooks/useSocket'
+import { useNotifications } from '@/hooks/useNotifications'
 
 // ─── Types ──────────────────────────────────────────────
 interface Dispute {
@@ -187,6 +189,7 @@ function FileDisputeModal({ open, onClose, onSubmitted }: { open: boolean; onClo
   const [files, setFiles] = useState<File[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const socket = useSocket()
 
   if (!open) return null
 
@@ -218,6 +221,22 @@ function FileDisputeModal({ open, onClose, onSubmitted }: { open: boolean; onClo
       })
 
       if (res.data.success) {
+        // ─── Send real-time notification ──────────────────────────────
+        if (socket) {
+          socket.emit('notification:send', {
+            userId: 'admin', // Broadcast to admins
+            type: 'dispute_filed',
+            title: 'New Dispute Filed',
+            body: `A new dispute has been filed for booking #${bookingId.trim().slice(-6).toUpperCase()}`,
+            link: `/admin/disputes/${res.data.data._id}`,
+            meta: {
+              bookingId: bookingId.trim(),
+              reason,
+              disputeId: res.data.data._id,
+            },
+          })
+        }
+
         onSubmitted()
         onClose()
         setBookingId(''); setDescription(''); setFiles([]); setReason('driver_no_show')
@@ -431,12 +450,45 @@ export default function HelpCenter() {
   const [fileModalOpen, setFileModalOpen] = useState(false)
   const [selectedDispute, setSelectedDispute] = useState<Dispute | null>(null)
   const [disputeFilter, setDisputeFilter] = useState<'all' | Dispute['status']>('all')
+  const [newDisputeNotification, setNewDisputeNotification] = useState(false)
 
-  // Contact form state
+  // ─── Socket for real-time updates ──────────────────────────────────────────
+  const socket = useSocket()
+  const { notifications } = useNotifications()
+
+  // ─── Contact form state ──────────────────────────────────────────────────
   const [contactSubject, setContactSubject] = useState('Account Access')
   const [contactTripId, setContactTripId] = useState('')
   const [contactMessage, setContactMessage] = useState('')
   const [contactSent, setContactSent] = useState(false)
+
+  // ─── Listen for dispute status updates ──────────────────────────────────
+  useEffect(() => {
+    if (!socket) return
+
+    const handleDisputeUpdate = (data: any) => {
+      // Refresh disputes when status changes
+      fetchDisputes()
+      setNewDisputeNotification(true)
+      setTimeout(() => setNewDisputeNotification(false), 3000)
+    }
+
+    socket.on('dispute:update', handleDisputeUpdate)
+
+    return () => {
+      socket.off('dispute:update', handleDisputeUpdate)
+    }
+  }, [socket])
+
+  // ─── Check notifications for dispute updates ────────────────────────────
+  useEffect(() => {
+    if (notifications && notifications.length > 0) {
+      const latestNotif = notifications[0]
+      if (latestNotif.type === 'dispute_filed' || latestNotif.type === 'dispute_resolved') {
+        fetchDisputes()
+      }
+    }
+  }, [notifications])
 
   const fetchDisputes = async () => {
     setLoadingDisputes(true)
@@ -477,12 +529,19 @@ export default function HelpCenter() {
           <p className="text-gray-500 text-sm mt-1">Get support, file disputes, and find answers to common questions</p>
         </div>
         {activeTab === 'disputes' && (
-          <button
-            onClick={() => setFileModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition shadow-sm shadow-blue-200"
-          >
-            <Plus size={16} /> File New Dispute
-          </button>
+          <div className="flex items-center gap-3">
+            {newDisputeNotification && (
+              <span className="text-xs font-semibold text-green-600 bg-green-50 border border-green-200 px-3 py-1.5 rounded-full animate-pulse">
+                Dispute updated
+              </span>
+            )}
+            <button
+              onClick={() => setFileModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition shadow-sm shadow-blue-200"
+            >
+              <Plus size={16} /> File New Dispute
+            </button>
+          </div>
         )}
       </div>
 

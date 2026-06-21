@@ -6,12 +6,14 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import {
   ArrowLeft, Star, ShieldCheck, Clock, Calendar,
-  Users, Zap, CreditCard, RefreshCcw,
+  Users, Zap, CreditCard,
   Navigation, ChevronRight, Heart, Share2, AlertCircle,
-  Car, MessageCircle, Phone, Loader2, ChevronDown
+  Car, MessageCircle, Phone, Loader2, ChevronDown,
+  CheckCircle, XCircle, MapPin, UserCheck
 } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
+import { useSocket } from '@/hooks/useSocket'
 import CarSeatLayout from '@/components/user/CarSeatLayout'
 
 const TripDetailMap = dynamic(() => import('@/components/maps/TripDetailMap'), {
@@ -67,33 +69,63 @@ interface TripData {
     isVerified: boolean
   }
   createdAt: string
+  seats?: Array<{
+    seatNumber: number
+    bookings: Array<{
+      bookingId: string
+      passengerId: string
+      fromOrder: number
+      toOrder: number
+      status: string
+    }>
+  }>
 }
 
 interface SeatMapData {
-  seatMap: Array<{ seatNumber: number; available: boolean; occupiedBy?: any }>
+  seatMap: Array<{
+    seatNumber: number
+    available: boolean
+    occupiedBy?: {
+      fromOrder: number
+      toOrder: number
+      passengerName?: string
+      passengerId?: string
+    }
+  }>
   fare: number
   distanceKm: number
   freeCount: number
   waypoints: Waypoint[]
 }
 
-// ─── Indian car database (deterministic by driver ID) ─────────────────────────
+interface Booking {
+  _id: string
+  passengerId: { _id: string; name: string }
+  seatNumber: number
+  fromOrder: number
+  toOrder: number
+  status: string
+  fareCharged: number
+  distanceKm: number
+}
+
+// ─── Indian car database ──────────────────────────────────────────────────────
 const INDIAN_CARS = [
-  { name: 'Maruti Suzuki Swift',  variant: 'ZXI',       type: 'Hatchback' },
-  { name: 'Maruti Suzuki Baleno', variant: 'Alpha',     type: 'Hatchback' },
-  { name: 'Hyundai i20',          variant: 'Asta',      type: 'Hatchback' },
-  { name: 'Tata Altroz',          variant: 'XZ+',       type: 'Hatchback' },
-  { name: 'Maruti Suzuki Dzire',  variant: 'ZXI',       type: 'Sedan'     },
-  { name: 'Honda City',           variant: 'VX CVT',    type: 'Sedan'     },
-  { name: 'Hyundai Verna',        variant: 'SX',        type: 'Sedan'     },
-  { name: 'Honda Amaze',          variant: 'V CVT',     type: 'Sedan'     },
-  { name: 'Hyundai Creta',        variant: 'SX(O)',     type: 'SUV'       },
-  { name: 'Kia Seltos',           variant: 'HTX',       type: 'SUV'       },
-  { name: 'Maruti Suzuki Brezza', variant: 'ZXI+',      type: 'SUV'       },
-  { name: 'Tata Nexon',           variant: 'XZ+ TGDi',  type: 'SUV'       },
-  { name: 'Toyota Innova Crysta', variant: 'GX 7-Str',  type: 'MPV'       },
-  { name: 'Maruti Suzuki Ertiga', variant: 'ZXI',       type: 'MPV'       },
-  { name: 'Kia Carens',           variant: 'Prestige+', type: 'MPV'       },
+  { name: 'Maruti Suzuki Swift', variant: 'ZXI', type: 'Hatchback' },
+  { name: 'Maruti Suzuki Baleno', variant: 'Alpha', type: 'Hatchback' },
+  { name: 'Hyundai i20', variant: 'Asta', type: 'Hatchback' },
+  { name: 'Tata Altroz', variant: 'XZ+', type: 'Hatchback' },
+  { name: 'Maruti Suzuki Dzire', variant: 'ZXI', type: 'Sedan' },
+  { name: 'Honda City', variant: 'VX CVT', type: 'Sedan' },
+  { name: 'Hyundai Verna', variant: 'SX', type: 'Sedan' },
+  { name: 'Honda Amaze', variant: 'V CVT', type: 'Sedan' },
+  { name: 'Hyundai Creta', variant: 'SX(O)', type: 'SUV' },
+  { name: 'Kia Seltos', variant: 'HTX', type: 'SUV' },
+  { name: 'Maruti Suzuki Brezza', variant: 'ZXI+', type: 'SUV' },
+  { name: 'Tata Nexon', variant: 'XZ+ TGDi', type: 'SUV' },
+  { name: 'Toyota Innova Crysta', variant: 'GX 7-Str', type: 'MPV' },
+  { name: 'Maruti Suzuki Ertiga', variant: 'ZXI', type: 'MPV' },
+  { name: 'Kia Carens', variant: 'Prestige+', type: 'MPV' },
 ]
 const STATE_PREFIXES = ['KL', 'KA', 'TN', 'MH', 'DL', 'AP', 'TS', 'GJ']
 
@@ -104,51 +136,53 @@ function pickCar(id: string) {
 function pickPlate(id: string) {
   let h = 0; for (const c of id) h = (h * 17 + c.charCodeAt(0)) >>> 0
   const state = STATE_PREFIXES[h % STATE_PREFIXES.length]
-  const dist  = String((h % 99) + 1).padStart(2, '0')
+  const dist = String((h % 99) + 1).padStart(2, '0')
   const alpha = String.fromCharCode(65 + (h % 26)) + String.fromCharCode(65 + ((h >> 4) % 26))
-  const num   = String((h % 9000) + 1000)
+  const num = String((h % 9000) + 1000)
   return `${state}-${dist}-${alpha}-${num}`
 }
 
 export default function TripDetailsPage() {
-  const params       = useParams()
-  const router       = useRouter()
+  const params = useParams()
+  const router = useRouter()
   const searchParams = useSearchParams()
   const { isAuthenticated, user } = useAuthStore()
+  const socket = useSocket()
   const tripId = params.id as string
 
-  const [trip, setTrip]               = useState<TripData | null>(null)
-  const [loading, setLoading]         = useState(true)
-  const [error, setError]             = useState('')
-  const [saved, setSaved]             = useState(false)
+  const [trip, setTrip] = useState<TripData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
   const [selectedFromOrder, setSelectedFromOrder] = useState<number>(0)
-  const [selectedToOrder, setSelectedToOrder]     = useState<number>(0)
-  const [seatMap, setSeatMap]         = useState<SeatMapData | null>(null)
+  const [selectedToOrder, setSelectedToOrder] = useState<number>(0)
+  const [seatMap, setSeatMap] = useState<SeatMapData | null>(null)
   const [selectedSeat, setSelectedSeat] = useState<number | null>(null)
   const [loadingSeatMap, setLoadingSeatMap] = useState(false)
   const [segmentFare, setSegmentFare] = useState<number>(0)
   const [segmentDistance, setSegmentDistance] = useState<number>(0)
-  const [showStops, setShowStops]     = useState(false)
+  const [showStops, setShowStops] = useState(false)
+  const [bookings, setBookings] = useState<Booking[]>([])
+  const [loadingBookings, setLoadingBookings] = useState(false)
+  const [userBooking, setUserBooking] = useState<Booking | null>(null)
+  const [totalEarnings, setTotalEarnings] = useState(0)
+  const [confirmedBookings, setConfirmedBookings] = useState(0)
 
   // ── URL params ──────────────────────────────────────────────────────────────
-  const returnTo   = searchParams.get('returnTo') || '/search'
-  const fromParam  = searchParams.get('from')     || ''
-  const toParam    = searchParams.get('to')       || ''
-  const dateParam  = searchParams.get('date')     || ''
+  const returnTo = searchParams.get('returnTo') || '/search'
+  const fromParam = searchParams.get('from') || ''
+  const toParam = searchParams.get('to') || ''
+  const dateParam = searchParams.get('date') || ''
 
-  // Guest segment params — set by MyTrips when a passenger clicks Details
-  const guestFrom      = searchParams.get('guestFrom')     || ''
-  const guestTo        = searchParams.get('guestTo')       || ''
-  const guestDistance  = parseFloat(searchParams.get('guestDistance') || '0')
-  const guestFare      = parseInt(searchParams.get('guestFare') || '0')
-  const guestFromOrder = parseInt(searchParams.get('fromOrder')   || '-1', 10)
-  const guestToOrder   = parseInt(searchParams.get('toOrder')     || '-1', 10)
-  const guestSeatNum   = searchParams.get('seatNumber') || ''
+  const guestFrom = searchParams.get('guestFrom') || ''
+  const guestTo = searchParams.get('guestTo') || ''
+  const guestDistance = parseFloat(searchParams.get('guestDistance') || '0')
+  const guestFare = parseInt(searchParams.get('guestFare') || '0')
+  const guestFromOrder = parseInt(searchParams.get('fromOrder') || '-1', 10)
+  const guestToOrder = parseInt(searchParams.get('toOrder') || '-1', 10)
+  const guestSeatNum = searchParams.get('seatNumber') || ''
 
-  // Determine if current user is the host
   const isHost = trip && user && trip.driverId._id === user.id
-
-  // Guest view only when coming from My Trips as passenger AND not the host
   const isGuestView = !isHost && returnTo === '/trips' && !!(guestFrom && guestTo && guestFromOrder >= 0 && guestToOrder > guestFromOrder)
   const isFromMyTrips = returnTo === '/trips'
   const isFromDashboard = returnTo === '/dashboard'
@@ -163,69 +197,207 @@ export default function TripDetailsPage() {
     ? `/search?from=${encodeURIComponent(fromParam)}&to=${encodeURIComponent(toParam)}&date=${dateParam}`
     : returnTo
 
-  // ── Fetch trip ──────────────────────────────────────────────────────────────
-  useEffect(() => {
-    const fetchTrip = async () => {
-      setLoading(true); setError('')
-      try {
-        const res = await api.get(`/trips/${tripId}`)
-        if (res.data.success) {
-          const data: TripData = res.data.data
-          setTrip(data)
+  // ─── Fetch trip ──────────────────────────────────────────────────────────────
+  // ─── Fetch trip ──────────────────────────────────────────────────────────────
+  const fetchTrip = async () => {
+    setLoading(true); setError('')
+    try {
+      const res = await api.get(`/trips/${tripId}`)
+      if (res.data.success) {
+        const data: TripData = res.data.data
+        setTrip(data)
 
-          if (isGuestView) {
-            setSelectedFromOrder(guestFromOrder)
-            setSelectedToOrder(guestToOrder)
-            if (guestFare > 0) {
-              setSegmentFare(guestFare)
+        // ─── Extract bookings from trip data with proper fare calculation ───
+        if (data.seats && data.waypoints) {
+          const extractedBookings: Booking[] = []
+          let totalEarningsCalc = 0
+          let confirmedCount = 0
+
+          data.seats.forEach(seat => {
+            seat.bookings.forEach(booking => {
+              if (booking.status === 'confirmed') {
+                confirmedCount++
+
+                // ✅ Calculate fare based on segment distance
+                const fromWp = data.waypoints?.find(w => w.order === booking.fromOrder)
+                const toWp = data.waypoints?.find(w => w.order === booking.toOrder)
+
+                let fare = data.pricePerSeat || 0
+                let distance = 0
+
+                if (fromWp && toWp) {
+                  distance = toWp.distanceFromStart - fromWp.distanceFromStart
+                  if (distance > 0 && data.farePerKm) {
+                    // Calculate based on distance
+                    fare = Math.round((data.farePerKm * distance) / 10) * 10
+                  } else if (distance > 0 && data.totalDistanceKm && data.pricePerSeat) {
+                    // Fallback: proportional fare
+                    const ratePerKm = data.pricePerSeat / data.totalDistanceKm
+                    fare = Math.round((ratePerKm * distance) / 10) * 10
+                  }
+                }
+
+                totalEarningsCalc += fare
+
+                extractedBookings.push({
+                  _id: booking.bookingId,
+                  seatNumber: seat.seatNumber,
+                  passengerId: { _id: booking.passengerId, name: 'Passenger' },
+                  fromOrder: booking.fromOrder,
+                  toOrder: booking.toOrder,
+                  status: booking.status,
+                  fareCharged: fare,
+                  distanceKm: distance
+                })
+              }
+            })
+          })
+
+          setBookings(extractedBookings)
+          setConfirmedBookings(confirmedCount)
+          setTotalEarnings(totalEarningsCalc)
+
+          // Find user's booking
+          if (user) {
+            const userBook = extractedBookings.find(b => b.passengerId._id === user.id)
+            setUserBooking(userBook || null)
+            if (userBook) {
+              setSelectedSeat(userBook.seatNumber)
+              setSegmentFare(userBook.fareCharged)
+              setSegmentDistance(userBook.distanceKm)
             }
-          } else if (data.waypoints && data.waypoints.length >= 2) {
-            setSelectedFromOrder(data.waypoints[0].order)
-            setSelectedToOrder(data.waypoints[data.waypoints.length - 1].order)
           }
         }
-      } catch (e: any) {
-        setError(e.response?.data?.message || 'Failed to load trip details')
-      } finally {
-        setLoading(false)
-      }
-    }
-    if (tripId) fetchTrip()
-  }, [tripId])
 
-  // ── Fetch seat map (only for non-host, non-guest views) ─────────────────────
-  useEffect(() => {
-    if (isHost || isGuestView) return
+        // ─── Set segment orders ──────────────────────────────────────────────
+        if (isGuestView) {
+          setSelectedFromOrder(guestFromOrder)
+          setSelectedToOrder(guestToOrder)
+          if (guestFare > 0) {
+            setSegmentFare(guestFare)
+          }
+        } else if (data.waypoints && data.waypoints.length >= 2) {
+          setSelectedFromOrder(data.waypoints[0].order)
+          setSelectedToOrder(data.waypoints[data.waypoints.length - 1].order)
+        }
+      }
+    } catch (e: any) {
+      setError(e.response?.data?.message || 'Failed to load trip details')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ─── Fetch seat map ─────────────────────────────────────────────────────────
+  const fetchSeatMap = async () => {
     if (!trip || selectedFromOrder < 0 || selectedToOrder <= selectedFromOrder) return
 
-    const fetchSeatMap = async () => {
-      setLoadingSeatMap(true)
-      try {
-        const res = await api.get(
-          `/trips/${tripId}/seat-map?fromOrder=${selectedFromOrder}&toOrder=${selectedToOrder}`
-        )
-        if (res.data.success) {
-          const data: SeatMapData = res.data.data
-          setSeatMap(data)
-          setSegmentFare(data.fare)
-          setSegmentDistance(data.distanceKm)
-          setSelectedSeat(null)
-        }
-      } catch (e) {
-        console.error('Failed to fetch seat map:', e)
-      } finally {
-        setLoadingSeatMap(false)
+    setLoadingSeatMap(true)
+    try {
+      const res = await api.get(
+        `/trips/${tripId}/seat-map?fromOrder=${selectedFromOrder}&toOrder=${selectedToOrder}`
+      )
+      if (res.data.success) {
+        const data: SeatMapData = res.data.data
+        setSeatMap(data)
+        setSegmentFare(data.fare)
+        setSegmentDistance(data.distanceKm)
       }
+    } catch (e) {
+      console.error('Failed to fetch seat map:', e)
+    } finally {
+      setLoadingSeatMap(false)
     }
+  }
 
+  // ─── Initial data fetch ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (tripId) {
+      fetchTrip()
+    }
+  }, [tripId])
+
+  // ─── Fetch seat map ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (isHost || isGuestView) return
     fetchSeatMap()
   }, [tripId, selectedFromOrder, selectedToOrder, trip, isHost, isGuestView])
 
+  // ─── Also fetch seat map for guest view to show all seats ──────────────────
+  useEffect(() => {
+    if (isGuestView && trip && selectedFromOrder >= 0 && selectedToOrder > selectedFromOrder) {
+      fetchSeatMap()
+    }
+  }, [isGuestView, trip, selectedFromOrder, selectedToOrder])
+
+  // ─── Real-time updates via Socket.IO ──────────────────────────────────────
+  useEffect(() => {
+    if (!socket) return
+
+    const handleBookingUpdate = (data: any) => {
+      fetchTrip()
+      fetchSeatMap()
+    }
+
+    const handleTripUpdate = (data: any) => {
+      fetchTrip()
+    }
+
+    socket.on('booking:confirmed', handleBookingUpdate)
+    socket.on('booking:cancelled', handleBookingUpdate)
+    socket.on('trip:update', handleTripUpdate)
+
+    return () => {
+      socket.off('booking:confirmed', handleBookingUpdate)
+      socket.off('booking:cancelled', handleBookingUpdate)
+      socket.off('trip:update', handleTripUpdate)
+    }
+  }, [socket, tripId])
+
+  // ─── Helper functions ──────────────────────────────────────────────────────
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
 
   const getInitials = (name: string) =>
     name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
+
+  const handleChatClick = () => {
+    if (!isAuthenticated) {
+      router.push('/login')
+      return
+    }
+
+    // If user has a booking, go to messages
+    if (userBooking) {
+      router.push(`/messages?bookingId=${userBooking._id}`)
+      return
+    }
+
+    // Otherwise try to find any booking for this trip
+    api.get(`/bookings/trip/${tripId}`)
+      .then(res => {
+        if (res.data.success && res.data.data.length > 0) {
+          const booking = res.data.data[0]
+          router.push(`/messages?bookingId=${booking._id}`)
+        } else {
+          alert('You need to book this trip to chat with the driver')
+        }
+      })
+      .catch(() => {
+        alert('Unable to start chat. Please try again.')
+      })
+  }
+
+  const handleProceedToCheckout = () => {
+    if (!selectedSeat) { alert('Please select a seat'); return }
+    router.push(
+      `/checkout/${tripId}` +
+      `?fromOrder=${selectedFromOrder}&toOrder=${selectedToOrder}` +
+      `&seatNumber=${selectedSeat}&fare=${segmentFare}&distance=${segmentDistance}` +
+      `&from=${encodeURIComponent(fromParam)}&to=${encodeURIComponent(toParam)}` +
+      `&date=${dateParam}&returnTo=${returnTo}`
+    )
+  }
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center h-96 gap-3">
@@ -251,7 +423,8 @@ export default function TripDetailsPage() {
 
   const driver = trip.driverId
   const seatsLeft = trip.seatsAvailable
-  const fillPct = ((trip.totalSeats - seatsLeft) / trip.totalSeats) * 100
+  const totalSeats = trip.totalSeats
+  const fillPct = ((totalSeats - seatsLeft) / totalSeats) * 100
   const car = pickCar(driver._id)
   const plate = pickPlate(driver._id)
   const waypoints = trip.waypoints || []
@@ -266,27 +439,15 @@ export default function TripDetailsPage() {
   const displayETA = displayDistance > 0 ? displayDistance / 60 : 0
   const platformFee = Math.round(segmentFare * 0.05)
   const total = segmentFare + platformFee
-
-  const handleProceedToCheckout = () => {
-    if (!selectedSeat) { alert('Please select a seat'); return }
-    router.push(
-      `/checkout/${tripId}` +
-      `?fromOrder=${selectedFromOrder}&toOrder=${selectedToOrder}` +
-      `&seatNumber=${selectedSeat}&fare=${segmentFare}&distance=${segmentDistance}` +
-      `&from=${encodeURIComponent(fromParam)}&to=${encodeURIComponent(toParam)}` +
-      `&date=${dateParam}&returnTo=${returnTo}`
-    )
-  }
-
-  // Calculate total potential earnings (full trip)
   const totalPotential = trip.pricePerSeat * trip.totalSeats
 
-  // Prepare seat map for CarSeatLayout component
+  // ─── Prepare seat map for CarSeatLayout ────────────────────────────────────
   const seatMapForLayout = seatMap?.seatMap.map(seat => ({
     seatNumber: seat.seatNumber,
     available: seat.available
   })) || []
 
+  // ─── RENDER ──────────────────────────────────────────────────────────────────
   return (
     <div className="max-w-5xl mx-auto space-y-5 pb-10">
 
@@ -306,7 +467,7 @@ export default function TripDetailsPage() {
         </div>
       </div>
 
-      {/* Host Earnings Banner */}
+      {/* ─── HOST EARNINGS BANNER ─── */}
       {isHost && (
         <div className="bg-green-50 border border-green-200 rounded-xl p-4">
           <div className="flex items-center justify-between">
@@ -316,17 +477,17 @@ export default function TripDetailsPage() {
             </div>
             <div className="text-right">
               <p className="text-xs text-gray-500">{seatsLeft} seats left</p>
-              <p className="text-xs text-gray-500">{trip.totalSeats - seatsLeft} booked</p>
+              <p className="text-xs text-gray-500">{confirmedBookings} booked</p>
             </div>
           </div>
           <div className="mt-3 pt-3 border-t border-green-100 flex justify-between">
-            <span className="text-sm font-semibold text-gray-700">Potential Earnings</span>
-            <span className="text-lg font-bold text-green-600">₹{totalPotential}</span>
+            <span className="text-sm font-semibold text-gray-700">Total Earnings</span>
+            <span className="text-lg font-bold text-green-600">₹{totalEarnings}</span>
           </div>
         </div>
       )}
 
-      {/* Guest journey banner */}
+      {/* ─── PASSENGER JOURNEY BANNER ─── */}
       {isGuestView && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
           <div className="flex items-start justify-between gap-4">
@@ -336,12 +497,12 @@ export default function TripDetailsPage() {
               <p className="text-xs text-gray-500 mt-1 flex items-center gap-2">
                 <span>{displayDistance} km</span>
                 {displayETA > 0 && <><span>·</span><span>~{Math.round(displayETA * 60)} min</span></>}
-                {guestSeatNum && <><span>·</span><span>Seat {guestSeatNum}</span></>}
+                {userBooking?.seatNumber && <><span>·</span><span>Seat {userBooking.seatNumber}</span></>}
               </p>
             </div>
             <div className="text-right shrink-0">
               <p className="text-xs text-gray-400 mb-1">Your fare</p>
-              <p className="text-2xl font-black text-blue-600">₹{segmentFare}</p>
+              <p className="text-2xl font-black text-blue-600">₹{userBooking?.fareCharged || segmentFare}</p>
             </div>
           </div>
           <div className="mt-3 pt-3 border-t border-blue-100 flex items-center gap-1.5 text-xs text-blue-400">
@@ -353,10 +514,10 @@ export default function TripDetailsPage() {
 
       <div className="grid grid-cols-[1fr_360px] gap-6 items-start">
 
-        {/* LEFT COLUMN */}
+        {/* ─── LEFT COLUMN ─── */}
         <div className="space-y-4">
 
-          {/* Driver card */}
+          {/* Driver Card */}
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
             <div className="flex items-start gap-4">
               <div className="relative">
@@ -391,7 +552,8 @@ export default function TripDetailsPage() {
                 </div>
               </div>
               <div className="flex flex-col gap-2">
-                <button className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition">
+                <button onClick={handleChatClick}
+                  className="flex items-center gap-1.5 px-3 py-1.5 border border-blue-200 bg-blue-50 rounded-lg text-xs text-blue-600 hover:bg-blue-100 transition">
                   <MessageCircle size={13} /> Chat
                 </button>
                 <button className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition">
@@ -420,6 +582,67 @@ export default function TripDetailsPage() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* ─── SEAT LAYOUT ─── */}
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
+            <h2 className="font-semibold text-gray-900 mb-4">
+              {isHost ? 'Seat Layout & Bookings' : isGuestView ? 'Your Reserved Seat' : 'Select a Seat'}
+            </h2>
+
+            {loadingSeatMap ? (
+              <div className="flex justify-center py-8"><Loader2 size={24} className="text-blue-500 animate-spin" /></div>
+            ) : seatMap ? (
+              <>
+                <CarSeatLayout
+                  totalSeats={trip.totalSeats}
+                  seatMap={seatMapForLayout}
+                  selectedSeat={selectedSeat}
+                  setSelectedSeat={isHost || isGuestView ? () => { } : setSelectedSeat}
+                  womenOnly={trip.womenOnly}
+                />
+
+                {/* ─── HOST: Show booking details ─── */}
+                {isHost && bookings.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Bookings</p>
+                    <div className="space-y-1.5">
+                      {bookings.map((booking) => (
+                        <div key={booking._id} className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs text-gray-400">Seat {booking.seatNumber}</span>
+                            <span className="font-medium text-gray-700">{booking.passengerId.name}</span>
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full ${booking.status === 'confirmed'
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-red-100 text-red-700'
+                              }`}>
+                              {booking.status}
+                            </span>
+                          </div>
+                          <span className="text-xs text-gray-500">₹{booking.fareCharged || trip.pricePerSeat}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ─── GUEST: Show your booking highlight ─── */}
+                {isGuestView && userBooking && (
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                      <p className="text-sm font-semibold text-blue-700">
+                        ✅ You are booked on <span className="font-black">Seat {userBooking.seatNumber}</span>
+                      </p>
+                      <p className="text-xs text-blue-500 mt-1">
+                        {displayFrom} → {displayTo} · ₹{userBooking.fareCharged || segmentFare}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-center text-gray-500 text-sm py-4">Loading seat map...</p>
+            )}
           </div>
 
           {/* Route Details */}
@@ -480,7 +703,7 @@ export default function TripDetailsPage() {
           {/* Vehicle & Amenities */}
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
             <h2 className="font-semibold text-gray-900 mb-4">Vehicle & Amenities</h2>
-            
+
             {trip.vehicleInfo ? (
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4">
                 <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">Vehicle</p>
@@ -506,50 +729,66 @@ export default function TripDetailsPage() {
               ))}
             </div>
           </div>
-
-          {/* Seat selection - only for search/booking flow (not host, not guest) */}
-          {!isHost && !isGuestView && selectedFromOrder < selectedToOrder && (
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
-              <h2 className="font-semibold text-gray-900 mb-4">Select a Seat</h2>
-              {loadingSeatMap ? (
-                <div className="flex justify-center py-8"><Loader2 size={24} className="text-blue-500 animate-spin" /></div>
-              ) : seatMap ? (
-                <CarSeatLayout
-                  totalSeats={trip.totalSeats}
-                  seatMap={seatMapForLayout}
-                  selectedSeat={selectedSeat}
-                  setSelectedSeat={setSelectedSeat}
-                  womenOnly={trip.womenOnly}
-                />
-              ) : (
-                <p className="text-center text-gray-500 text-sm py-4">Select boarding and alighting points first</p>
-              )}
-            </div>
-          )}
-
-          {/* Guest: show reserved seat */}
-          {isGuestView && guestSeatNum && (
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
-              <h2 className="font-semibold text-gray-900 mb-4">Your Reserved Seat</h2>
-              <div className="text-center py-4">
-                <div className="inline-block p-6 bg-blue-50 rounded-2xl border-2 border-blue-200">
-                  <p className="text-4xl font-black text-blue-600">Seat {guestSeatNum}</p>
-                  <p className="text-xs text-gray-500 mt-2">Reserved for you</p>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* RIGHT COLUMN */}
+        {/* ─── RIGHT COLUMN ─── */}
         <div className="space-y-4 sticky top-[80px]">
           <TripDetailMap from={displayFrom} to={displayTo} pickup={displayFrom} distanceKm={displayDistance || undefined} etaHours={displayETA || undefined} />
 
           {/* Price Summary */}
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 space-y-3">
-            <h2 className="font-semibold text-gray-900">Price Summary</h2>
+            <h2 className="font-semibold text-gray-900">
+              {isHost ? 'Trip Summary' : isGuestView ? 'Your Booking' : 'Price Summary'}
+            </h2>
 
-            {!isHost ? (
+            {isHost ? (
+              // ─── HOST VIEW ───
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between text-gray-600">
+                  <span>Price per Seat</span>
+                  <span>₹{trip.pricePerSeat}</span>
+                </div>
+                <div className="flex justify-between text-gray-600">
+                  <span>Total Seats</span>
+                  <span>{trip.totalSeats}</span>
+                </div>
+                <div className="flex justify-between text-gray-600">
+                  <span>Confirmed Bookings</span>
+                  <span>{confirmedBookings}</span>
+                </div>
+                <div className="border-t border-gray-100 pt-2 flex justify-between items-center">
+                  <span className="font-bold text-gray-900">Total Earnings</span>
+                  <span className="text-2xl font-bold text-green-600">₹{totalEarnings}</span>
+                </div>
+                <p className="text-xs text-gray-400 text-center mt-2">
+                  {confirmedBookings === 0 ? 'No bookings yet' : `${confirmedBookings} seat${confirmedBookings > 1 ? 's' : ''} booked`}
+                </p>
+              </div>
+            ) : isGuestView ? (
+              // ─── GUEST VIEW ───
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between text-gray-600">
+                  <span>Your Segment</span>
+                  <span>{displayDistance} km</span>
+                </div>
+                <div className="flex justify-between text-gray-600">
+                  <span>Fare</span>
+                  <span>₹{userBooking?.fareCharged || segmentFare}</span>
+                </div>
+                <div className="flex justify-between text-gray-600">
+                  <span>Platform Fee</span>
+                  <span>₹{platformFee}</span>
+                </div>
+                <div className="border-t border-gray-100 pt-2 flex justify-between items-center">
+                  <span className="font-bold text-gray-900">Total Paid</span>
+                  <span className="text-2xl font-bold text-blue-600">₹{(userBooking?.fareCharged || segmentFare) + platformFee}</span>
+                </div>
+                <div className="mt-2 p-2 bg-gray-50 rounded-lg text-center">
+                  <p className="text-xs text-gray-500">Seat <span className="font-bold text-gray-700">{userBooking?.seatNumber || 'N/A'}</span></p>
+                </div>
+              </div>
+            ) : (
+              // ─── SEARCH/BOOKING VIEW ───
               <>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between text-gray-600">
@@ -566,40 +805,12 @@ export default function TripDetailsPage() {
                   </div>
                 </div>
 
-                {!isGuestView && (
-                  <button onClick={handleProceedToCheckout} disabled={seatsLeft === 0 || !selectedSeat}
-                    className={`w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition ${
-                      seatsLeft === 0 || !selectedSeat ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-200'
+                <button onClick={handleProceedToCheckout} disabled={seatsLeft === 0 || !selectedSeat}
+                  className={`w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition ${seatsLeft === 0 || !selectedSeat ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-200'
                     }`}>
-                    {seatsLeft === 0 ? 'No Seats Available' : !selectedSeat ? 'Select a Seat First' : <>Proceed to Checkout <ChevronRight size={16} /></>}
-                  </button>
-                )}
-
-                {isGuestView && (
-                  <Link href="/trips">
-                    <button className="w-full py-3 rounded-xl font-bold text-sm bg-blue-600 hover:bg-blue-700 text-white transition">
-                      Back to My Trips
-                    </button>
-                  </Link>
-                )}
+                  {seatsLeft === 0 ? 'No Seats Available' : !selectedSeat ? 'Select a Seat First' : <>Proceed to Checkout <ChevronRight size={16} /></>}
+                </button>
               </>
-            ) : (
-              /* Host View */
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between text-gray-600">
-                  <span>Price per Seat</span>
-                  <span>₹{trip.pricePerSeat}</span>
-                </div>
-                <div className="flex justify-between text-gray-600">
-                  <span>Total Seats</span>
-                  <span>{trip.totalSeats}</span>
-                </div>
-                <div className="border-t border-gray-100 pt-2 flex justify-between items-center">
-                  <span className="font-bold text-gray-900">Full Trip Value</span>
-                  <span className="text-2xl font-bold text-green-600">₹{totalPotential}</span>
-                </div>
-                <p className="text-xs text-gray-400 text-center mt-2">Earnings based on confirmed bookings</p>
-              </div>
             )}
 
             <div className="bg-green-50 border border-green-100 rounded-lg p-3">

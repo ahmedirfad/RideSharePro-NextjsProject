@@ -10,6 +10,8 @@ import {
   Zap, ShieldCheck, TrendingUp, Leaf,
 } from 'lucide-react'
 import api from '@/lib/api'
+import { useSocket } from '@/hooks/useSocket'
+import { useNotifications } from '@/hooks/useNotifications'
 
 // ─── Recharts (client-side only) ─────────────────────────────────────────────
 const BarChart           = dynamic(() => import('recharts').then(m => ({ default: m.BarChart           })), { ssr: false })
@@ -178,6 +180,68 @@ export default function AdminDashboard() {
   const [recentTrips, setRecentTrips] = useState<AdminTrip[]>([])
   const [totalDocs,   setTotalDocs]   = useState(0)
   const [liveCount,   setLiveCount]   = useState(0)
+
+  // ─── Socket & Notifications ────────────────────────────────────────────────
+  const socket = useSocket()
+  const { notifications, unreadCount } = useNotifications()
+
+  // ─── Listen for real-time events ───────────────────────────────────────────
+  useEffect(() => {
+    if (!socket) return
+
+    // ── New booking notification ──
+    const handleNewBooking = (data: any) => {
+      // Update live count
+      setLiveCount(prev => prev + 1)
+      
+      // Show toast or notification
+      console.log('📢 New booking:', data)
+      
+      // Refresh dashboard data
+      fetchAll()
+    }
+
+    // ── New trip notification ──
+    const handleNewTrip = (data: any) => {
+      console.log('🚗 New trip posted:', data)
+      // Refresh trips data
+      fetchAll()
+    }
+
+    // ── Dispute filed notification ──
+    const handleDisputeFiled = (data: any) => {
+      console.log('⚠️ New dispute filed:', data)
+      // Update dispute count badge (if you have a badge)
+      // You can update state here
+    }
+
+    // ── Trip status update ──
+    const handleTripUpdate = (data: any) => {
+      console.log('📅 Trip status updated:', data)
+      // Refresh data
+      fetchAll()
+    }
+
+    // ── Live count updates ──
+    const handleLiveCountUpdate = (data: { count: number }) => {
+      setLiveCount(data.count)
+    }
+
+    // ── Register event listeners ──
+    socket.on('booking:new', handleNewBooking)
+    socket.on('trip:new', handleNewTrip)
+    socket.on('dispute:filed', handleDisputeFiled)
+    socket.on('trip:update', handleTripUpdate)
+    socket.on('live:count', handleLiveCountUpdate)
+
+    return () => {
+      socket.off('booking:new', handleNewBooking)
+      socket.off('trip:new', handleNewTrip)
+      socket.off('dispute:filed', handleDisputeFiled)
+      socket.off('trip:update', handleTripUpdate)
+      socket.off('live:count', handleLiveCountUpdate)
+    }
+  }, [socket])
 
   const fetchAll = useCallback(async () => {
     setLoading(true); setError('')

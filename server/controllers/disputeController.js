@@ -2,6 +2,8 @@ const mongoose = require("mongoose");
 const Dispute = require("../models/Dispute");
 const Booking = require("../models/Booking");
 const Trip = require("../models/Trip");
+const User = require("../models/User"); // ✅ ADD THIS
+const { notify } = require("../utils/notify"); // ✅ ADD THIS
 
 // ─────────────────────────────────────────────────────────────
 // POST /api/disputes
@@ -61,6 +63,55 @@ const createDispute = async (req, res) => {
     });
 
     await dispute.save();
+
+    // ─────────────────────────────────────────────────────
+    // 🔔 NEW: Send notifications
+    // ─────────────────────────────────────────────────────
+    
+    const user = await User.findById(userId).select("name");
+    const againstUser = await User.findById(against).select("name");
+
+    // 1. Notify the person being disputed against
+    await notify(req.io, {
+      userId: against,
+      type: "dispute_filed",
+      title: "⚠️ Dispute Filed Against You",
+      body: `${user?.name || "Someone"} filed a dispute: ${reason}`,
+      link: `/disputes/${dispute._id}`,
+      meta: { disputeId: dispute._id, bookingId: booking._id }
+    });
+
+    // 2. Notify admin (Option A: Single admin user)
+    const adminUserId = process.env.ADMIN_USER_ID;
+    if (adminUserId) {
+      await notify(req.io, {
+        userId: adminUserId,
+        type: "dispute_filed",
+        title: "🚨 New Dispute Needs Review",
+        body: `${user?.name || "Someone"} vs ${againstUser?.name || "Someone"} - ${reason}`,
+        link: `/admin/disputes/${dispute._id}`,
+        meta: { disputeId: dispute._id, bookingId: booking._id }
+      });
+    }
+
+    // 3. Notify admin room (Option B: If you have admin room)
+    req.io.to("admin_room").emit("new_dispute", {
+      disputeId: dispute._id,
+      raisedBy: user?.name || "Someone",
+      against: againstUser?.name || "Someone",
+      reason,
+      createdAt: dispute.createdAt
+    });
+
+    // 4. Notify the person who filed the dispute (confirmation)
+    await notify(req.io, {
+      userId: userId,
+      type: "dispute_filed",
+      title: "✅ Dispute Filed",
+      body: `Your dispute against ${againstUser?.name || "the other party"} has been filed. We'll review it shortly.`,
+      link: `/disputes/${dispute._id}`,
+      meta: { disputeId: dispute._id, bookingId: booking._id }
+    });
 
     return res.status(201).json({
       success: true,
@@ -181,6 +232,33 @@ const cancelDispute = async (req, res) => {
     dispute.status = "dismissed";
     dispute.adminNotes = "Withdrawn by user";
     await dispute.save();
+
+    // ─────────────────────────────────────────────────────
+    // 🔔 NEW: Notify other party that dispute was withdrawn
+    // ─────────────────────────────────────────────────────
+    const user = await User.findById(userId).select("name");
+    
+    await notify(req.io, {
+      userId: dispute.against,
+      type: "dispute_filed", // Reuse type or add "dispute_withdrawn"
+      title: "✅ Dispute Withdrawn",
+      body: `${user?.name || "Someone"} has withdrawn their dispute`,
+      link: `/disputes/${dispute._id}`,
+      meta: { disputeId: dispute._id }
+    });
+
+    // Notify admin (if admin exists)
+    const adminUserId = process.env.ADMIN_USER_ID;
+    if (adminUserId) {
+      await notify(req.io, {
+        userId: adminUserId,
+        type: "dispute_filed",
+        title: "📌 Dispute Withdrawn",
+        body: `${user?.name || "Someone"} withdrew dispute #${dispute._id}`,
+        link: `/admin/disputes/${dispute._id}`,
+        meta: { disputeId: dispute._id }
+      });
+    }
 
     return res.json({ success: true, message: "Dispute withdrawn", data: dispute });
   } catch (error) {

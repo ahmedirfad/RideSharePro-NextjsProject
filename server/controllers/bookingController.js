@@ -1,6 +1,7 @@
 const Trip = require("../models/Trip");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
+const { notify } = require("../utils/notify"); // ✅ ADD THIS
 
 const createBooking = async (req, res) => {
   try {
@@ -49,6 +50,40 @@ const createBooking = async (req, res) => {
     const populatedBooking = await Booking.findById(booking._id)
       .populate("passengerId", "name email phone")
       .populate("tripId", "from to departureDate departureTime pricePerSeat");
+
+    // ─────────────────────────────────────────────────────
+    // 🔔 NEW: Send notifications
+    // ─────────────────────────────────────────────────────
+    const passenger = await User.findById(passengerId).select("name");
+    const driver = await User.findById(trip.driverId).select("name");
+
+    // 1. Notify driver
+    await notify(req.io, {
+      userId: trip.driverId,
+      type: "booking_confirmed",
+      title: "New Booking! 🚗",
+      body: `${passenger?.name || "Someone"} booked ${seatsBooked} seat${seatsBooked > 1 ? 's' : ''} on your trip ${trip.from} → ${trip.to}`,
+      link: `/trip/${trip._id}`,
+      meta: { bookingId: booking._id, tripId: trip._id, seatsBooked }
+    });
+
+    // 2. Notify passenger
+    await notify(req.io, {
+      userId: passengerId,
+      type: "booking_confirmed",
+      title: "Booking Confirmed! ✅",
+      body: `Your booking on ${trip.from} → ${trip.to} (${trip.departureDate}) is confirmed`,
+      link: `/messages?bookingId=${booking._id}`,
+      meta: { bookingId: booking._id, tripId: trip._id }
+    });
+
+    // 3. Emit to chat room
+    req.io.to(`chat:${booking._id}`).emit("booking_confirmed", {
+      bookingId: booking._id,
+      passengerId,
+      driverId: trip.driverId,
+      tripId: trip._id
+    });
 
     res.status(201).json({
       success: true,
@@ -146,7 +181,7 @@ const cancelBooking = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.userId;
 
-    const booking = await Booking.findById(id);
+    const booking = await Booking.findById(id).populate("tripId");
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
@@ -175,6 +210,30 @@ const cancelBooking = async (req, res) => {
     trip.seatsAvailable += booking.seatsBooked;
     await trip.save();
 
+    // ─────────────────────────────────────────────────────
+    // 🔔 NEW: Notify driver
+    // ─────────────────────────────────────────────────────
+    const passenger = await User.findById(userId).select("name");
+    
+    await notify(req.io, {
+      userId: trip.driverId,
+      type: "booking_confirmed", // Reuse type or add "booking_cancelled"
+      title: "❌ Booking Cancelled",
+      body: `${passenger?.name || "Someone"} cancelled their booking on ${trip.from} → ${trip.to}`,
+      link: `/trip/${trip._id}`,
+      meta: { bookingId: booking._id, tripId: trip._id }
+    });
+
+    // Notify passenger (confirmation)
+    await notify(req.io, {
+      userId: userId,
+      type: "booking_confirmed",
+      title: "Booking Cancelled ✅",
+      body: `You have cancelled your booking on ${trip.from} → ${trip.to}`,
+      link: `/trips`,
+      meta: { bookingId: booking._id, tripId: trip._id }
+    });
+
     res.json({
       success: true,
       message: "Booking cancelled successfully",
@@ -190,7 +249,7 @@ const confirmBooking = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.userId;
 
-    const booking = await Booking.findById(id).populate("tripId");
+    const booking = await Booking.findById(id).populate("tripId").populate("passengerId", "name");
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
@@ -206,6 +265,20 @@ const confirmBooking = async (req, res) => {
 
     booking.status = "confirmed";
     await booking.save();
+
+    // ─────────────────────────────────────────────────────
+    // 🔔 NEW: Notify passenger
+    // ─────────────────────────────────────────────────────
+    const driver = await User.findById(userId).select("name");
+    
+    await notify(req.io, {
+      userId: booking.passengerId._id,
+      type: "booking_confirmed",
+      title: "Booking Confirmed! ✅",
+      body: `${driver?.name || "Driver"} has confirmed your booking on ${booking.tripId.from} → ${booking.tripId.to}`,
+      link: `/messages?bookingId=${booking._id}`,
+      meta: { bookingId: booking._id, tripId: booking.tripId._id }
+    });
 
     res.json({
       success: true,
@@ -225,21 +298,40 @@ const updateBookingStatus = async (req, res) => {
     const { status } = req.body;
     const userId = req.user.userId;
 
-    const booking = await Booking.findById(id).populate("tripId");
+    const booking = await Booking.findById(id).populate("tripId").populate("passengerId", "name");
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
 
     const isDriver = booking.tripId.driverId.toString() === userId;
-    const isPassenger = booking.passengerId.toString() === userId;
+    const isPassenger = booking.passengerId._id.toString() === userId;
 
     if (!isDriver && !isPassenger) {
       return res.status(403).json({ message: "Unauthorized" });
     }
 
+    const oldStatus = booking.status;
     booking.status = status;
     await booking.save();
+
+    // ─────────────────────────────────────────────────────
+    // 🔔 NEW: Notify other party about status change
+    // ─────────────────────────────────────────────────────
+    const actor = await User.findById(userId).select("name");
+    const otherUserId = isDriver ? booking.passengerId._id : booking.tripId.driverId;
+
+    // Only notify if status actually changed
+    if (oldStatus !== status) {
+      await notify(req.io, {
+        userId: otherUserId,
+        type: "booking_confirmed",
+        title: `Booking ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+        body: `${actor?.name || "Someone"} changed booking status to ${status} on ${booking.tripId.from} → ${booking.tripId.to}`,
+        link: `/trip/${booking.tripId._id}`,
+        meta: { bookingId: booking._id, tripId: booking.tripId._id, status }
+      });
+    }
 
     res.json({
       success: true,

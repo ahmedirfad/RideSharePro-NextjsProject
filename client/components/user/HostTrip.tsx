@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
+import { useSocket } from '@/hooks/useSocket'
 
 // ✅ Leaflet must be loaded client-side only — Next.js SSR will break it otherwise
 const TripMap = dynamic(() => import('@/components/maps/TripMap'), {
@@ -367,6 +368,7 @@ function ProTips() {
 export default function HostTrip() {
   const router = useRouter()
   const { user, isAuthenticated } = useAuthStore()
+  const socket = useSocket()
 
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -377,11 +379,12 @@ export default function HostTrip() {
   const [price, setPrice] = useState(0)
   const [detour, setDetour] = useState(5)
   const [womenOnly, setWomenOnly] = useState(false)
-  const [vehicleInfo, setVehicleInfo] = useState('') // 👈 NEW STATE
+  const [vehicleInfo, setVehicleInfo] = useState('')
   const [posting, setPosting] = useState(false)
   const [posted, setPosted] = useState(false)
   const [error, setError] = useState('')
   const [suggestedPrice, setSuggestedPrice] = useState(0)
+  const [tripId, setTripId] = useState<string | null>(null)
 
   const [fromLat, setFromLat] = useState<number | null>(null)
   const [fromLon, setFromLon] = useState<number | null>(null)
@@ -601,15 +604,52 @@ export default function HostTrip() {
         womenOnly,
         waypoints: waypointsArray,
         totalDistanceKm: parseFloat(totalDistance.toFixed(2)),
-        vehicleInfo: vehicleInfo // 👈 ADDED VEHICLE INFO
+        vehicleInfo: vehicleInfo
       }
 
       const response = await api.post('/trips', tripData)
 
       if (response.data.success) {
+        const tripId = response.data.data._id
+        setTripId(tripId)
         setPosted(true)
+
+        // ─── Send notification via Socket.IO ──────────────────────────────
+        if (socket) {
+          // Notify admin about new trip
+          socket.emit('notification:send', {
+            userId: 'admin', // You might want to broadcast to all admins
+            type: 'trip_created',
+            title: 'New Trip Posted!',
+            body: `${user.name} posted a trip from ${from} to ${to}`,
+            link: `/admin/trips/${tripId}`,
+            meta: {
+              tripId,
+              driverId: user.id,
+              from,
+              to,
+              departureDate: date,
+              departureTime: time,
+              seats,
+              price,
+            },
+          })
+
+          // Broadcast to all users (or specific region)
+          socket.emit('trip:new', {
+            tripId,
+            from,
+            to,
+            departureDate: date,
+            departureTime: time,
+            price,
+            seats,
+            driverName: user.name,
+          })
+        }
+
         setTimeout(() => {
-          router.push(`/trip/${response.data.data._id}`)
+          router.push(`/trip/${tripId}`)
         }, 1500)
       }
     } catch (error: any) {

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
+import { useSocket } from '@/hooks/useSocket'
 import CarSeatLayout from '@/components/user/CarSeatLayout'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -383,7 +384,8 @@ function ConfirmationScreen({ bookingId, trip, fromName, toName, seatNumber, far
 export default function CheckoutPage({ tripId }: { tripId: string }) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, user } = useAuthStore()
+  const socket = useSocket()
   
   const fromOrder = searchParams.get('fromOrder')
   const toOrder = searchParams.get('toOrder')
@@ -479,7 +481,61 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
       })
       
       if (response.data.success) {
-        setBookingId(response.data.data.bookingId)
+        const bookingId = response.data.data.bookingId
+        setBookingId(bookingId)
+        
+        // ─── Send real-time notifications via Socket.IO ──────────────────────
+        if (socket) {
+          // Notify driver about new booking
+          socket.emit('notification:send', {
+            userId: trip.driverId._id,
+            type: 'booking_confirmed',
+            title: 'New Booking! 🚗',
+            body: `${user?.name || 'Someone'} booked seat ${seatNumber} on your trip from ${trip.from} to ${trip.to}`,
+            link: `/trip/${tripId}`,
+            meta: {
+              bookingId,
+              tripId,
+              seatNumber,
+              passengerId: user?.id,
+              from: trip.from,
+              to: trip.to,
+              departureDate: trip.departureDate,
+            },
+          })
+
+          // Notify passenger (confirmation)
+          socket.emit('notification:send', {
+            userId: user?.id,
+            type: 'booking_confirmed',
+            title: 'Booking Confirmed! ✅',
+            body: `Your seat ${seatNumber} is confirmed on trip from ${trip.from} to ${trip.to}`,
+            link: `/trips`,
+            meta: {
+              bookingId,
+              tripId,
+              seatNumber,
+              driverId: trip.driverId._id,
+              driverName: trip.driverId.name,
+            },
+          })
+
+          // Broadcast to admin for monitoring
+          socket.emit('notification:send', {
+            userId: 'admin',
+            type: 'booking_confirmed',
+            title: 'New Booking Alert!',
+            body: `New booking on trip ${trip.from} → ${trip.to}`,
+            link: `/admin/bookings/${bookingId}`,
+            meta: {
+              bookingId,
+              tripId,
+              passenger: user?.name,
+              driver: trip.driverId.name,
+            },
+          })
+        }
+
         setStep('confirmed')
       }
     } catch (err: any) {

@@ -10,6 +10,8 @@ import {
 } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
+import { useSocket } from '@/hooks/useSocket'
+import { useNotifications } from '@/hooks/useNotifications'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface EarningEntry {
@@ -174,59 +176,107 @@ function TxRow({ entry }: { entry: EarningEntry }) {
 // ─── Main Component ────────────────────────────────────────────────────────────
 export default function Earnings() {
   const { isAuthenticated } = useAuthStore()
+  const socket = useSocket()
+  const { notifications } = useNotifications()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [entries, setEntries] = useState<EarningEntry[]>([])
   const [view, setView] = useState<'week' | 'month' | 'year'>('month')
   const [filterType, setFilterType] = useState<'all' | 'HOST' | 'GUEST'>('all')
   const [filterMonth, setFilterMonth] = useState<string>('all')
+  const [newPayoutAlert, setNewPayoutAlert] = useState(false)
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    const fetchEarnings = async () => {
-      if (!isAuthenticated) { setLoading(false); return }
-      setLoading(true); setError('')
-      try {
-        const res = await api.get('/trips/my-trips/all')
-        if (!res.data.success) throw new Error('Failed')
+  // ─── Fetch ──────────────────────────────────────────────────────────────────
+  const fetchEarnings = async () => {
+    if (!isAuthenticated) { setLoading(false); return }
+    setLoading(true); setError('')
+    try {
+      const res = await api.get('/trips/my-trips/all')
+      if (!res.data.success) throw new Error('Failed')
 
-        const all: any[] = res.data.data.all || []
-        const parsed: EarningEntry[] = []
+      const all: any[] = res.data.data.all || []
+      const parsed: EarningEntry[] = []
 
-        for (const t of all) {
-          const gross = parseAmount(t.amount)
-          const fee = Math.round(gross * 0.05)
-          const net = gross - fee
+      for (const t of all) {
+        const gross = parseAmount(t.amount)
+        const fee = Math.round(gross * 0.05)
+        const net = gross - fee
 
-          parsed.push({
-            id:          t.tripId || t.id || String(Math.random()),
-            type:        t.role as 'HOST' | 'GUEST',
-            route:       t.route || `${t.fromName} → ${t.toName}`,
-            date:        t.date,
-            rawDate:     toRawDate(t.date),
-            month:       getMonthKey(t.date),
-            amount:      gross,
-            platformFee: fee,
-            net:         net,
-            status:      t.status,
-            seats:       t.seats?.booked || 1,
-            distanceKm:  t.distanceKm,
-            driverName:  t.driver?.name,
-          })
-        }
-
-        parsed.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime())
-        setEntries(parsed)
-      } catch (e: any) {
-        setError(e.response?.data?.message || 'Failed to load earnings')
-      } finally {
-        setLoading(false)
+        parsed.push({
+          id:          t.tripId || t.id || String(Math.random()),
+          type:        t.role as 'HOST' | 'GUEST',
+          route:       t.route || `${t.fromName} → ${t.toName}`,
+          date:        t.date,
+          rawDate:     toRawDate(t.date),
+          month:       getMonthKey(t.date),
+          amount:      gross,
+          platformFee: fee,
+          net:         net,
+          status:      t.status,
+          seats:       t.seats?.booked || 1,
+          distanceKm:  t.distanceKm,
+          driverName:  t.driver?.name,
+        })
       }
+
+      parsed.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime())
+      setEntries(parsed)
+    } catch (e: any) {
+      setError(e.response?.data?.message || 'Failed to load earnings')
+    } finally {
+      setLoading(false)
     }
+  }
+
+  useEffect(() => {
     fetchEarnings()
   }, [isAuthenticated])
 
-  // ── Derived stats ──────────────────────────────────────────────────────────
+  // ─── Listen for real-time updates ──────────────────────────────────────────
+  useEffect(() => {
+    if (!socket) return
+
+    const handleNewBooking = (data: any) => {
+      // Refresh earnings when a booking is confirmed (new earning)
+      fetchEarnings()
+    }
+
+    const handlePaymentReleased = (data: any) => {
+      // Show alert when escrow is released (new payout)
+      setNewPayoutAlert(true)
+      fetchEarnings()
+      setTimeout(() => setNewPayoutAlert(false), 5000)
+    }
+
+    const handleTripCompleted = (data: any) => {
+      // Refresh when trip is completed (earning finalized)
+      fetchEarnings()
+    }
+
+    socket.on('booking:confirmed', handleNewBooking)
+    socket.on('escrow:released', handlePaymentReleased)
+    socket.on('trip:completed', handleTripCompleted)
+
+    return () => {
+      socket.off('booking:confirmed', handleNewBooking)
+      socket.off('escrow:released', handlePaymentReleased)
+      socket.off('trip:completed', handleTripCompleted)
+    }
+  }, [socket])
+
+  // ─── Check notifications for payment updates ──────────────────────────────
+  useEffect(() => {
+    if (notifications && notifications.length > 0) {
+      const latestNotif = notifications[0]
+      if (latestNotif.type === 'escrow_released' || latestNotif.type === 'refund_processed') {
+        fetchEarnings()
+        setNewPayoutAlert(true)
+        setTimeout(() => setNewPayoutAlert(false), 5000)
+      }
+    }
+  }, [notifications])
+
+  // ─── Derived stats ──────────────────────────────────────────────────────────
   const { hostEntries, guestEntries, months, chartData, monthlySummaries, topRoute, bestMonth } = useMemo(() => {
     const hostEntries  = entries.filter(e => e.type === 'HOST'  && e.status !== 'CANCELLED')
     const guestEntries = entries.filter(e => e.type === 'GUEST' && e.status !== 'CANCELLED')
@@ -315,10 +365,17 @@ export default function Earnings() {
           <h1 className="text-2xl font-black text-gray-900 tracking-tight">Earnings</h1>
           <p className="text-gray-400 text-sm mt-0.5">Track your income, fees, and travel spend</p>
         </div>
-        <button onClick={handleExport}
-          className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition shadow-sm">
-          <Download size={14} /> Export CSV
-        </button>
+        <div className="flex items-center gap-3">
+          {newPayoutAlert && (
+            <span className="text-xs font-semibold text-green-600 bg-green-50 border border-green-200 px-3 py-1.5 rounded-full animate-pulse">
+              New payout received!
+            </span>
+          )}
+          <button onClick={handleExport}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition shadow-sm">
+            <Download size={14} /> Export CSV
+          </button>
+        </div>
       </div>
 
       {/* ── Hero earnings card ── */}

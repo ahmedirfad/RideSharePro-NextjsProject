@@ -9,6 +9,8 @@ import {
   ChevronDown, AlertCircle, FileText, Image, Send,
 } from 'lucide-react'
 import api from '@/lib/api'
+import { useSocket } from '@/hooks/useSocket'
+import { useNotifications } from '@/hooks/useNotifications'
 
 // ─── Types (matching your Dispute model exactly) ──────────────────────────────
 type DisputeStatus = 'open' | 'under_review' | 'resolved' | 'dismissed'
@@ -104,6 +106,7 @@ function ResolveModal({
   const [resolution, setResolution] = useState<DisputeResolution>('none')
   const [notes,      setNotes]      = useState(dispute.adminNotes || '')
   const [saving,     setSaving]     = useState(false)
+  const socket = useSocket()
 
   const handle = async () => {
     setSaving(true)
@@ -115,6 +118,36 @@ function ResolveModal({
       })
       if (res.data.success) {
         onResolved(dispute._id, status, resolution, notes)
+        
+        // ─── Send real-time notification ──────────────────────────────────
+        if (socket) {
+          // Notify both parties
+          socket.emit('notification:send', {
+            userId: dispute.raisedBy._id,
+            type: 'dispute_resolved',
+            title: 'Dispute Resolved',
+            body: `Your dispute has been ${status === 'resolved' ? 'resolved' : 'updated'}`,
+            link: `/help`,
+            meta: { disputeId: dispute._id, status },
+          })
+          
+          socket.emit('notification:send', {
+            userId: dispute.against._id,
+            type: 'dispute_resolved',
+            title: 'Dispute Resolved',
+            body: `The dispute has been ${status === 'resolved' ? 'resolved' : 'updated'}`,
+            link: `/help`,
+            meta: { disputeId: dispute._id, status },
+          })
+
+          // Notify admin dashboard
+          socket.emit('dispute:update', {
+            disputeId: dispute._id,
+            status,
+            resolution,
+          })
+        }
+        
         onClose()
       }
     } catch (error) {
@@ -211,11 +244,8 @@ function DetailDrawer({
 
   return (
     <div className="fixed inset-0 z-40 flex">
-      {/* Backdrop */}
       <div className="flex-1 bg-black/50" onClick={onClose} />
-      {/* Panel */}
       <div className="w-full max-w-[420px] bg-[#0d1117] border-l border-white/8 flex flex-col overflow-hidden shadow-2xl">
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/8 shrink-0">
           <div>
             <p className="text-xs text-gray-500 font-mono">Case #{dispute._id}</p>
@@ -373,9 +403,51 @@ export default function AdminDisputePage() {
   const [page,         setPage]         = useState(1)
   const [refreshing,   setRefreshing]   = useState(false)
   const [error,        setError]        = useState('')
+  const [newDisputeAlert, setNewDisputeAlert] = useState(false)
   const PER_PAGE = 10
 
-  // ── Fetch disputes ──────────────────────────────────────────────────────────
+  const socket = useSocket()
+  const { notifications } = useNotifications()
+
+  // ─── Real-time dispute updates ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!socket) return
+
+    const handleNewDispute = (data: any) => {
+      fetchDisputes()
+      fetchStats()
+      setNewDisputeAlert(true)
+      setTimeout(() => setNewDisputeAlert(false), 3000)
+    }
+
+    const handleDisputeUpdate = (data: any) => {
+      fetchDisputes()
+      fetchStats()
+      setNewDisputeAlert(true)
+      setTimeout(() => setNewDisputeAlert(false), 3000)
+    }
+
+    socket.on('dispute:new', handleNewDispute)
+    socket.on('dispute:update', handleDisputeUpdate)
+
+    return () => {
+      socket.off('dispute:new', handleNewDispute)
+      socket.off('dispute:update', handleDisputeUpdate)
+    }
+  }, [socket])
+
+  // ─── Check notifications for dispute updates ──────────────────────────────
+  useEffect(() => {
+    if (notifications && notifications.length > 0) {
+      const latestNotif = notifications[0]
+      if (latestNotif.type === 'dispute_filed' || latestNotif.type === 'dispute_resolved') {
+        fetchDisputes()
+        fetchStats()
+      }
+    }
+  }, [notifications])
+
+  // ─── Fetch disputes ──────────────────────────────────────────────────────────
   const fetchDisputes = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -509,6 +581,11 @@ export default function AdminDisputePage() {
             <h1 className="text-xl font-black text-white tracking-tight" style={{ fontFamily: "'Outfit',sans-serif" }}>
               Dispute Center
             </h1>
+            {newDisputeAlert && (
+              <span className="text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-full animate-pulse">
+                Disputes updated
+              </span>
+            )}
             {stats && stats.open > 0 && (
               <span className="flex items-center gap-1 text-[11px] font-black bg-red-500/20 text-red-400 border border-red-500/30 px-2.5 py-1 rounded-full">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-ping" />

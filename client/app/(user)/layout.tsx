@@ -6,10 +6,12 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Calendar, Wallet, User,
   Settings, HelpCircle, Car, Search, Bell, LogOut,
-  ChevronDown, Menu, X, Star, Shield, MessageSquare, Loader2,
+  ChevronDown, Menu, X, MessageSquare, Loader2,
   Gauge,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/authStore'
+import { useNotifications } from '@/hooks/useNotifications'
+import { useSocket } from '@/hooks/useSocket'
 import api from '@/lib/api'
 
 const navItems = [
@@ -26,16 +28,19 @@ const userMenuItems = [
   { icon: HelpCircle, label: 'Help',      href: '/help' },
 ]
 
-const NOTIFICATIONS = [
-  { icon: <Car size={12} />, text: 'Ravi Kumar accepted your ride request', time: '2m ago', unread: true },
-  { icon: <Star size={12} />, text: 'You received a 5-star rating!', time: '1h ago', unread: false },
-  { icon: <Calendar size={12} />, text: 'Trip reminder: Kozhikode → Kochi tomorrow', time: '5h ago', unread: true },
-]
+function timeAgo(dateStr: string) {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
 
-const MESSAGES = [
-  { avatar: 'RK', name: 'Ravi Kumar', message: 'I\'ll be at the pickup point by 6 AM', time: '5m ago', unread: true },
-  { avatar: 'SJ', name: 'Sarah J.', message: 'Thanks for the ride!', time: '2h ago', unread: false },
-]
+  if (diffMins < 1) return 'Just now'
+  if (diffMins < 60) return `${diffMins}m ago`
+  if (diffHours < 24) return `${diffHours}h ago`
+  return `${diffDays}d ago`
+}
 
 export default function UserLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname()
@@ -43,23 +48,72 @@ export default function UserLayout({ children }: { children: ReactNode }) {
   const { logout, user, isAuthenticated, _hasHydrated } = useAuthStore()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
-  const [msgOpen, setMsgOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
   const [userData, setUserData] = useState<any>(null)
   const [isChecking, setIsChecking] = useState(true)
+  const [msgUnread, setMsgUnread] = useState(0)
 
   const notifRef = useRef<HTMLDivElement>(null)
-  const msgRef = useRef<HTMLDivElement>(null)
   const userRef = useRef<HTMLDivElement>(null)
 
-  // Check authentication FIRST - redirect before rendering anything
+  // ─── Socket & Notifications ────────────────────────────────────────────────
+  const socket = useSocket()
+  const { notifications, unreadCount: notifUnread, markRead, markAllRead } = useNotifications()
+
+  // ─── Fetch message unread count ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    const fetchUnreadCount = async () => {
+      try {
+        const res = await api.get('/messages/unread')
+        if (res.data.success) {
+          setMsgUnread(res.data.data.totalUnread || 0)
+        }
+      } catch (error) {
+        console.error('Failed to fetch unread count:', error)
+      }
+    }
+
+    fetchUnreadCount()
+  }, [isAuthenticated])
+
+  // ─── Listen for new messages and notifications ─────────────────────────────
+  useEffect(() => {
+    if (!socket) return
+
+    const handleNewNotification = (n: any) => {
+      if (n.type === 'new_message') {
+        setMsgUnread((c) => c + 1)
+      }
+    }
+
+    const handleMessagesRead = () => {
+      api.get('/messages/unread')
+        .then(res => {
+          if (res.data.success) {
+            setMsgUnread(res.data.data.totalUnread || 0)
+          }
+        })
+        .catch(() => {})
+    }
+
+    socket.on('new_notification', handleNewNotification)
+    socket.on('messages_read', handleMessagesRead)
+
+    return () => {
+      socket.off('new_notification', handleNewNotification)
+      socket.off('messages_read', handleMessagesRead)
+    }
+  }, [socket])
+
+  // ─── Total unread for badge ─────────────────────────────────────────────────
+  const totalUnread = notifUnread + msgUnread
+
+  // ─── Check authentication ──────────────────────────────────────────────────
   useEffect(() => {
     const token = localStorage.getItem('accessToken')
-    
-    if (!_hasHydrated) {
-      return
-    }
-    
+    if (!_hasHydrated) return
     if (!token && !isAuthenticated) {
       router.replace('/login')
     } else {
@@ -67,10 +121,9 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     }
   }, [_hasHydrated, isAuthenticated, router])
 
-  // Fetch user data only if authenticated
+  // ─── Fetch user data ───────────────────────────────────────────────────────
   useEffect(() => {
     if (isChecking) return
-    
     const fetchUserData = async () => {
       try {
         const response = await api.get('/auth/me')
@@ -81,23 +134,19 @@ export default function UserLayout({ children }: { children: ReactNode }) {
         console.error('Failed to fetch user data', error)
       }
     }
-    
     fetchUserData()
   }, [isChecking])
 
+  // ─── Click outside handlers ─────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false)
-      if (msgRef.current && !msgRef.current.contains(e.target as Node)) setMsgOpen(false)
       if (userRef.current && !userRef.current.contains(e.target as Node)) setUserOpen(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const totalUnread = NOTIFICATIONS.filter(n => n.unread).length + MESSAGES.filter(m => m.unread).length
-
-  // Check if user is admin
   const isAdmin = userData?.role === 'admin' || user?.role === 'admin'
 
   const getUserInitials = () => {
@@ -105,15 +154,10 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     return name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
   }
 
-  const getUserName = () => {
-    return userData?.name || user?.name || 'Guest'
-  }
+  const getUserName = () => userData?.name || user?.name || 'Guest'
+  const getUserEmail = () => userData?.email || user?.email || 'guest@example.com'
 
-  const getUserEmail = () => {
-    return userData?.email || user?.email || 'guest@example.com'
-  }
-
-  // Show loading while checking auth - DON'T RENDER ANYTHING ELSE
+  // ─── Loading state ──────────────────────────────────────────────────────────
   if (!_hasHydrated || isChecking) {
     return (
       <div className="min-h-screen bg-[#f5f7fa] flex items-center justify-center">
@@ -122,7 +166,6 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     )
   }
 
-  // Double-check: if no token, don't render anything
   const hasToken = typeof window !== 'undefined' && localStorage.getItem('accessToken')
   if (!hasToken && !isAuthenticated) {
     return null
@@ -165,14 +208,16 @@ export default function UserLayout({ children }: { children: ReactNode }) {
           background: #2563eb;
           border-radius: 2px;
         }
+        .badge-anim {
+          animation: badgePulse 2s infinite;
+        }
       `}</style>
 
-      {/* TOP NAVBAR */}
       <header className="bg-white border-b border-gray-100 sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-[60px]">
 
-            {/* Brand - Left */}
+            {/* Brand */}
             <Link href="/dashboard" className="flex items-center gap-2.5 shrink-0">
               <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-200">
                 <Car size={15} color="white" />
@@ -182,7 +227,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
               </span>
             </Link>
 
-            {/* Desktop Nav - Centered */}
+            {/* Desktop Nav */}
             <nav className="hidden lg:flex items-center gap-0.5">
               {navItems.map(item => {
                 const isActive = pathname === item.href
@@ -196,7 +241,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
               })}
             </nav>
 
-            {/* Right Side Icons */}
+            {/* Right Side */}
             <div className="flex items-center gap-2 shrink-0">
 
               {/* Search */}
@@ -205,81 +250,91 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                 <input placeholder="Search..." className="bg-transparent border-none outline-none text-sm flex-1 text-gray-700 placeholder-gray-400" />
               </div>
 
-              {/* Messages Dropdown */}
-              <div ref={msgRef} className="relative shrink-0">
-                <button
-                  onClick={() => { setMsgOpen(!msgOpen); setNotifOpen(false); setUserOpen(false) }}
-                  className="relative w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition text-gray-500"
-                >
-                  <MessageSquare size={17} />
-                  {MESSAGES.filter(m => m.unread).length > 0 && (
-                    <span className="badge-pulse absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
-                  )}
-                </button>
-                {msgOpen && (
-                  <div className="dropdown-anim absolute right-0 top-[calc(100%+8px)] w-80 bg-white border border-gray-100 rounded-2xl shadow-xl overflow-hidden z-50">
-                    <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
-                      <span className="font-semibold text-gray-900 text-sm">Messages</span>
-                      <Link href="/messages" className="text-xs text-blue-600 font-medium hover:underline">
-                        View All
-                      </Link>
-                    </div>
-                    {MESSAGES.map((msg, i) => (
-                      <Link key={i} href="/messages">
-                        <div className={`flex items-start gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition ${msg.unread ? 'bg-blue-50/40' : ''}`}>
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white text-xs font-bold flex items-center justify-center shrink-0">
-                            {msg.avatar}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex justify-between items-start">
-                              <p className="text-sm font-semibold text-gray-900">{msg.name}</p>
-                              <span className="text-[10px] text-gray-400">{msg.time}</span>
-                            </div>
-                            <p className="text-xs text-gray-600 truncate">{msg.message}</p>
-                          </div>
-                          {msg.unread && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0 mt-2" />}
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
+              {/* ─── MESSAGES ICON — navigates straight to /messages, no dropdown ─── */}
+              <Link
+                href="/messages"
+                className="relative w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition text-gray-500 shrink-0"
+              >
+                <MessageSquare size={17} />
+                {msgUnread > 0 && (
+                  <span className="badge-anim absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
                 )}
-              </div>
+              </Link>
 
-              {/* Notifications Dropdown */}
+              {/* ─── NOTIFICATIONS DROPDOWN ─── */}
               <div ref={notifRef} className="relative shrink-0">
                 <button
-                  onClick={() => { setNotifOpen(!notifOpen); setMsgOpen(false); setUserOpen(false) }}
+                  onClick={() => { setNotifOpen(!notifOpen); setUserOpen(false) }}
                   className="relative w-9 h-9 flex items-center justify-center rounded-xl hover:bg-gray-100 transition text-gray-500"
                 >
                   <Bell size={17} />
                   {totalUnread > 0 && (
-                    <span className="badge-pulse absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
+                    <span className="badge-anim absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white" />
                   )}
                 </button>
                 {notifOpen && (
                   <div className="dropdown-anim absolute right-0 top-[calc(100%+8px)] w-80 bg-white border border-gray-100 rounded-2xl shadow-xl overflow-hidden z-50">
                     <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center">
                       <span className="font-semibold text-gray-900 text-sm">Notifications</span>
-                      <button className="text-xs text-blue-600 font-medium hover:underline">Mark all read</button>
+                      {notifUnread > 0 && (
+                        <button
+                          onClick={() => { markAllRead(); setNotifOpen(false) }}
+                          className="text-xs text-blue-600 hover:underline font-medium"
+                        >
+                          Mark all read
+                        </button>
+                      )}
                     </div>
-                    {NOTIFICATIONS.map((n, i) => (
-                      <div key={i} className={`flex items-start gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition ${n.unread ? 'bg-blue-50/40' : ''}`}>
-                        <div className="text-gray-500 shrink-0 mt-0.5">{n.icon}</div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs text-gray-700 leading-relaxed">{n.text}</p>
-                          <p className="text-[10px] text-gray-400 mt-0.5">{n.time}</p>
-                        </div>
-                        {n.unread && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0 mt-1.5" />}
+
+                    {notifications.length === 0 ? (
+                      <div className="px-4 py-8 text-center text-gray-400 text-sm">
+                        <Bell size={24} className="mx-auto mb-2 text-gray-300" />
+                        <p>No notifications yet</p>
                       </div>
-                    ))}
+                    ) : (
+                      notifications.slice(0, 6).map((n: any) => (
+                        <Link
+                          key={n.id}
+                          href={n.link || '#'}
+                          onClick={() => { if (!n.read) markRead(n.id); setNotifOpen(false) }}
+                          className={`flex items-start gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition ${!n.read ? 'bg-blue-50/40' : ''}`}
+                        >
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs ${
+                            n.type === 'booking_confirmed' ? 'bg-green-100 text-green-600' :
+                            n.type === 'new_message'       ? 'bg-blue-100 text-blue-600' :
+                            n.type === 'dispute_filed'     ? 'bg-red-100 text-red-600' :
+                            n.type === 'trip_update'       ? 'bg-amber-100 text-amber-600' :
+                            'bg-gray-100 text-gray-500'
+                          }`}>
+                            {n.type === 'booking_confirmed' ? '✓' :
+                             n.type === 'new_message'       ? '💬' :
+                             n.type === 'dispute_filed'     ? '⚠' : '🔔'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-gray-800">{n.title}</p>
+                            <p className="text-xs text-gray-500 leading-relaxed">{n.body}</p>
+                            <p className="text-[10px] text-gray-400 mt-0.5">{timeAgo(n.createdAt)}</p>
+                          </div>
+                          {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0 mt-1.5" />}
+                        </Link>
+                      ))
+                    )}
+
+                    {notifications.length > 6 && (
+                      <div className="px-4 py-2.5 border-t border-gray-100 text-center">
+                        <Link href="/notifications" className="text-xs text-blue-600 hover:underline">
+                          View all notifications →
+                        </Link>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
 
-              {/* User Menu - with Admin Panel access */}
+              {/* ─── USER MENU ─── */}
               <div ref={userRef} className="relative shrink-0">
                 <button
-                  onClick={() => { setUserOpen(!userOpen); setNotifOpen(false); setMsgOpen(false) }}
+                  onClick={() => { setUserOpen(!userOpen); setNotifOpen(false) }}
                   className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-1.5 hover:bg-gray-100 transition cursor-pointer"
                 >
                   <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white font-bold text-xs shadow-sm shrink-0">
@@ -307,7 +362,6 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                       </Link>
                     ))}
                     <div className="border-t border-gray-100">
-                      {/* 👇 Admin Panel - near profile logo area */}
                       {isAdmin && (
                         <Link href="/admin" onClick={() => setUserOpen(false)}
                           className="flex items-center gap-3 px-4 py-2.5 text-sm text-purple-700 hover:bg-purple-50 transition">
@@ -318,13 +372,9 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                           </span>
                         </Link>
                       )}
-                      <button 
+                      <button
                         onClick={async () => {
-                          try {
-                            await api.post('/auth/logout')
-                          } catch (error) {
-                            console.error('Logout error:', error)
-                          }
+                          try { await api.post('/auth/logout') } catch (error) { console.error('Logout error:', error) }
                           logout()
                           localStorage.removeItem('accessToken')
                           router.replace('/login')
@@ -377,9 +427,9 @@ export default function UserLayout({ children }: { children: ReactNode }) {
               className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition">
               <MessageSquare size={16} />
               Messages
-              {MESSAGES.filter(m => m.unread).length > 0 && (
+              {msgUnread > 0 && (
                 <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                  {MESSAGES.filter(m => m.unread).length}
+                  {msgUnread}
                 </span>
               )}
             </Link>
