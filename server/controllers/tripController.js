@@ -1,8 +1,19 @@
 const mongoose = require("mongoose");
 const Trip = require("../models/Trip");
 const Booking = require("../models/Booking");
-const User = require("../models/User"); // ✅ ADD THIS
-const { notify } = require("../utils/notify"); // ✅ ADD THIS
+const User = require("../models/User");
+const { notify } = require("../utils/notify");
+
+// ✅ NEW: Import email functions
+const {
+    sendTripPostedEmail,
+    sendTripReminderEmail,
+    sendTripStartedEmail,
+    sendTripCompletedEmail,
+    sendBookingConfirmationEmail,
+    sendNewBookingAlertEmail
+} = require("../controllers/emailController");
+
 const {
     findFreeSeat,
     countFreeSeats,
@@ -135,9 +146,9 @@ const createTrip = async (req, res) => {
 
         await trip.save();
 
-        // ─────────────────────────────────────────────────────
-        // 🔔 OPTIONAL: Notify driver that trip was created
-        // ─────────────────────────────────────────────────────
+        const driver = await User.findById(req.user.userId).select("name email");
+
+        // ─── SOCKET NOTIFICATION ──────────────────────────────
         await notify(req.io, {
             userId: req.user.userId,
             type: "general",
@@ -146,6 +157,10 @@ const createTrip = async (req, res) => {
             link: `/trip/${trip._id}`,
             meta: { tripId: trip._id }
         });
+
+        // ─── EMAIL NOTIFICATION ────────────────────────────────
+        // ✅ FIXED: Pass driver and trip objects
+        await sendTripPostedEmail(driver, trip);
 
         return res.status(201).json({
             success: true,
@@ -199,7 +214,7 @@ const searchTrips = async (req, res) => {
 
             if (fromWp && toWp && fromWp.order < toWp.order) {
                 const segmentDist = toWp.distanceFromStart - fromWp.distanceFromStart;
-                
+
                 let fare = trip.pricePerSeat;
                 if (segmentDist > 0) {
                     const ratePerKm = trip.farePerKm || (trip.pricePerSeat / trip.totalDistanceKm);
@@ -266,6 +281,7 @@ const searchTrips = async (req, res) => {
 const bookSegment = async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
+    let committed = false;
 
     try {
         const { id } = req.params;
@@ -332,6 +348,14 @@ const bookSegment = async (req, res) => {
         const fromWp = trip.waypoints.find((w) => w.order === fromOrder);
         const toWp = trip.waypoints.find((w) => w.order === toOrder);
 
+        if (!fromWp || !toWp) {
+            await session.abortTransaction();
+            return res.status(400).json({
+                success: false,
+                message: "Could not resolve boarding/alighting waypoints for the given orders",
+            });
+        }
+
         const bookingId = new mongoose.Types.ObjectId();
 
         const updatedTrip = await Trip.findOneAndUpdate(
@@ -366,7 +390,7 @@ const bookSegment = async (req, res) => {
             },
             {
                 arrayFilters: [{ "seat.seatNumber": freeSeat.seatNumber }],
-                new: true,
+                returnDocument: "after",
                 session,
             }
         );
@@ -396,58 +420,52 @@ const bookSegment = async (req, res) => {
 
         await booking.save({ session });
         await session.commitTransaction();
+        committed = true;
 
-        // ─────────────────────────────────────────────────────
-        // 🔔 NEW: Send notifications
-        // ─────────────────────────────────────────────────────
-        const passenger = await User.findById(passengerId).select("name");
-        const driver = await User.findById(trip.driverId).select("name");
+        // ── Get user details for emails ────────────────────
+        const passenger = await User.findById(passengerId).select("name email");
+        const driver = await User.findById(trip.driverId).select("name email");
 
-        // 1. Notify driver
-        await notify(req.io, {
-            userId: trip.driverId,
-            type: "booking_confirmed",
-            title: "New Booking! 🚗",
-            body: `${passenger?.name || "Someone"} booked seat ${freeSeat.seatNumber} from ${fromWp.name} → ${toWp.name}`,
-            link: `/trip/${trip._id}`,
-            meta: { bookingId: booking._id, seatNumber: freeSeat.seatNumber }
-        });
+        // ─── SEND EMAILS ────────────────────────────────────
+        try {
+            await sendBookingConfirmationEmail(passenger, booking, trip);
+            await sendNewBookingAlertEmail(driver, passenger, booking, trip);
+        } catch (emailError) {
+            console.error('❌ Failed to send booking emails:', emailError);
+        }
 
-        // 2. Notify passenger
-        await notify(req.io, {
-            userId: passengerId,
-            type: "booking_confirmed",
-            title: "Booking Confirmed! ✅",
-            body: `Your seat ${freeSeat.seatNumber} from ${fromWp.name} → ${toWp.name} is confirmed`,
-            link: `/messages?bookingId=${booking._id}`,
-            meta: { bookingId: booking._id, seatNumber: freeSeat.seatNumber }
-        });
-
-        // 3. Emit to chat room
-        req.io.to(`chat:${booking._id}`).emit("booking_confirmed", {
-            bookingId: booking._id,
-            passengerId,
-            driverId: trip.driverId,
-            seatNumber: freeSeat.seatNumber
-        });
-
-        return res.status(201).json({
-            success: true,
-            message: `Seat ${freeSeat.seatNumber} booked: ${fromWp.name} → ${toWp.name}`,
-            data: {
-                bookingId: booking._id,
-                tripId: trip._id,
-                seatNumber: freeSeat.seatNumber,
-                from: fromWp.name,
-                to: toWp.name,
-                distanceKm,
-                fareCharged: fare,
-                status: "confirmed",
-                vehicleInfo: trip.vehicleInfo || "",
-            },
-        });
+        // ── Response ─────────────────────────────────────────
+        try {
+            return res.status(201).json({
+                success: true,
+                message: `Seat ${freeSeat.seatNumber} booked: ${fromWp.name} → ${toWp.name}`,
+                data: {
+                    bookingId: booking._id,
+                    tripId: trip._id,
+                    seatNumber: freeSeat.seatNumber,
+                    from: fromWp.name,
+                    to: toWp.name,
+                    distanceKm,
+                    fareCharged: fare,
+                    status: "confirmed",
+                },
+            });
+        } catch (responseError) {
+            console.error("Book segment: error building success response (booking still saved):", responseError);
+            return res.status(201).json({
+                success: true,
+                message: "Booking confirmed",
+                data: { bookingId: booking._id, tripId: trip._id },
+            });
+        }
     } catch (error) {
-        await session.abortTransaction();
+        if (!committed) {
+            try {
+                await session.abortTransaction();
+            } catch (abortError) {
+                console.error("Book segment: abortTransaction also failed:", abortError.message);
+            }
+        }
         console.error("Book segment error:", error);
         return res.status(500).json({ success: false, message: error.message });
     } finally {
@@ -593,11 +611,11 @@ const cancelTrip = async (req, res) => {
             return res.status(400).json({ success: false, message: "Invalid trip ID" });
         }
 
-        const trip = await Trip.findById(id);
+        const trip = await Trip.findById(id).populate("driverId", "name email");
         if (!trip) {
             return res.status(404).json({ success: false, message: "Trip not found" });
         }
-        if (trip.driverId.toString() !== req.user.userId) {
+        if (trip.driverId._id.toString() !== req.user.userId) {
             return res.status(403).json({ success: false, message: "Not authorized" });
         }
         if (trip.status !== "upcoming") {
@@ -608,10 +626,10 @@ const cancelTrip = async (req, res) => {
         }
 
         // ── Get all confirmed bookings before cancelling ──
-        const bookings = await Booking.find({ 
-            tripId: id, 
-            status: { $in: ["pending", "confirmed"] } 
-        }).populate("passengerId", "name");
+        const bookings = await Booking.find({
+            tripId: id,
+            status: { $in: ["pending", "confirmed"] }
+        }).populate("passengerId", "name email");
 
         trip.status = "cancelled";
         await trip.save();
@@ -621,15 +639,13 @@ const cancelTrip = async (req, res) => {
             { status: "cancelled" }
         );
 
-        // ─────────────────────────────────────────────────────
-        // 🔔 NEW: Notify all passengers
-        // ─────────────────────────────────────────────────────
-        const driver = await User.findById(req.user.userId).select("name");
+        const driver = await User.findById(req.user.userId).select("name email");
 
+        // ─── SOCKET NOTIFICATIONS ──────────────────────────────
         for (const booking of bookings) {
             await notify(req.io, {
                 userId: booking.passengerId._id,
-                type: "trip_completed", // Use appropriate type or add "trip_cancelled"
+                type: "trip_completed",
                 title: "❌ Trip Cancelled",
                 body: `Your trip ${trip.from} → ${trip.to} on ${trip.departureDate} has been cancelled by the driver`,
                 link: `/trips`,
@@ -637,7 +653,6 @@ const cancelTrip = async (req, res) => {
             });
         }
 
-        // Notify driver (confirmation)
         await notify(req.io, {
             userId: req.user.userId,
             type: "trip_completed",
@@ -646,6 +661,14 @@ const cancelTrip = async (req, res) => {
             link: `/trips`,
             meta: { tripId: trip._id }
         });
+
+        // ─── EMAIL NOTIFICATIONS ────────────────────────────────
+        // ✅ FIXED: Pass user and trip objects
+        for (const booking of bookings) {
+            await sendTripCompletedEmail(booking.passengerId, trip, 0);
+        }
+
+        await sendTripCompletedEmail(driver, trip, 0);
 
         return res.json({ success: true, message: "Trip cancelled successfully" });
     } catch (error) {
@@ -661,11 +684,11 @@ const updateTrip = async (req, res) => {
         const userId = req.user.userId;
         const updates = req.body;
 
-        const trip = await Trip.findById(id);
+        const trip = await Trip.findById(id).populate("driverId", "name email");
         if (!trip) {
             return res.status(404).json({ success: false, message: "Trip not found" });
         }
-        if (trip.driverId.toString() !== userId) {
+        if (trip.driverId._id.toString() !== userId) {
             return res.status(403).json({ success: false, message: "Only the driver can update this trip" });
         }
         if (trip.status !== "upcoming") {
@@ -689,16 +712,15 @@ const updateTrip = async (req, res) => {
 
         const updatedTrip = await Trip.findByIdAndUpdate(id, updates, { new: true });
 
-        // ─────────────────────────────────────────────────────
-        // 🔔 NEW: Notify all passengers if important changes
-        // ─────────────────────────────────────────────────────
+        // ─── Notify all passengers if important changes ──────
         if (changedFields.length > 0) {
-            const bookings = await Booking.find({ 
-                tripId: id, 
-                status: { $in: ["confirmed"] } 
-            }).populate("passengerId", "name");
+            const bookings = await Booking.find({
+                tripId: id,
+                status: { $in: ["confirmed"] }
+            }).populate("passengerId", "name email");
 
             for (const booking of bookings) {
+                // Socket notification
                 await notify(req.io, {
                     userId: booking.passengerId._id,
                     type: "trip_update",
@@ -710,10 +732,10 @@ const updateTrip = async (req, res) => {
             }
         }
 
-        return res.json({ 
-            success: true, 
-            message: "Trip updated successfully", 
-            data: updatedTrip 
+        return res.json({
+            success: true,
+            message: "Trip updated successfully",
+            data: updatedTrip
         });
     } catch (error) {
         console.error("Update trip error:", error);

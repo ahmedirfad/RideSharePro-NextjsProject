@@ -2,7 +2,13 @@ const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const { tokenGenerator } = require("../utils/tokenGenerator");
 const { generateOTP, storeOTP, verifyOTP, resendOTP } = require("../services/otpService");
-const { sendVerificationEmail, sendPasswordResetEmail } = require("../services/emailService");
+const {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+  sendWelcomeEmail,
+  sendNewDeviceLoginEmail,
+  sendPasswordChangedEmail
+} = require("../controllers/emailController");
 
 const accessTokenCookieOptions = {
   httpOnly: true,
@@ -45,7 +51,13 @@ const register = async (req, res) => {
 
     const otp = generateOTP();
     await storeOTP(email, otp);
-    await sendVerificationEmail(email, otp, name);
+    
+    // ✅ FIXED: Pass user object with OTP
+    user.verificationOTP = otp;
+    await sendVerificationEmail(user);
+
+    // ✅ FIXED: Pass user object
+    await sendWelcomeEmail(user);
 
     res.status(201).json({
       success: true,
@@ -117,7 +129,10 @@ const resendVerificationOTP = async (req, res) => {
     }
 
     const newOTP = await resendOTP(email);
-    await sendVerificationEmail(email, newOTP, user.name);
+    
+    // ✅ FIXED: Pass user object with new OTP
+    user.verificationOTP = newOTP;
+    await sendVerificationEmail(user);
 
     res.json({
       success: true,
@@ -151,6 +166,14 @@ const login = async (req, res) => {
     if (!isValid) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
+
+    const deviceInfo = {
+      device: req.headers['user-agent'] || 'Unknown Device',
+      location: req.ip || 'Unknown Location'
+    };
+
+    // ✅ FIXED: Pass user and deviceInfo
+    await sendNewDeviceLoginEmail(user, deviceInfo);
 
     const { AccessToken, RefreshToken } = tokenGenerator(user._id.toString(), user.role);
 
@@ -189,7 +212,9 @@ const forgotPassword = async (req, res) => {
 
     const otp = generateOTP();
     await storeOTP(email, otp);
-    await sendPasswordResetEmail(email, otp, user.name);
+    
+    // ✅ FIXED: Pass user and otp
+    await sendPasswordResetEmail(user, otp);
 
     res.status(200).json({
       success: true,
@@ -269,6 +294,9 @@ const resetPassword = async (req, res) => {
 
     await redis.del(verifiedKey);
     await redis.del(`otp:${email}`);
+
+    // ✅ FIXED: Pass user object
+    await sendPasswordChangedEmail(user);
 
     res.status(200).json({
       success: true,

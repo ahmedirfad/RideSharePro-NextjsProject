@@ -26,7 +26,6 @@ const TILES = {
   dark:      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
 }
 
-// Mock coordinates for common Indian cities (fallback)
 const MOCK_COORDS: Record<string, [number, number]> = {
   'Kozhikode': [11.2588, 75.7804],
   'Kochi': [9.9312, 76.2673],
@@ -51,32 +50,31 @@ const MOCK_COORDS: Record<string, [number, number]> = {
   'Wayanad': [11.6854, 76.1320],
 }
 
+// ── Geocode via OUR backend proxy, not Nominatim directly ────────────────────
+// Calling Nominatim straight from the browser is fragile for two reasons:
+// 1. Browsers silently strip/ignore custom User-Agent headers on fetch(),
+//    so Nominatim sees no real contact info and throttles/blocks the request.
+// 2. Nominatim's usage policy expects server-side traffic with caching and
+//    rate-limiting, not direct calls fired from every visitor's browser.
+// server/routes/geocodeRoutes.js already handles the correct User-Agent,
+// a 1 req/sec queue, and a 5-minute cache — so route through it instead.
 async function geocode(place: string): Promise<[number, number] | null> {
   if (!place.trim()) return null
-  
-  // Check mock data first for quick response
+
   const mockCoords = MOCK_COORDS[place]
-  if (mockCoords) {
-    return mockCoords
-  }
-  
-  // Try Nominatim as fallback
+  if (mockCoords) return mockCoords
+
   try {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 5000)
-    
+
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api'
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(place + ', India')}&format=json&limit=1`,
-      { 
-        headers: { 
-          'Accept-Language': 'en',
-          'User-Agent': 'RideSharePro/1.0'
-        },
-        signal: controller.signal
-      }
+      `${apiBase}/geocode/search?q=${encodeURIComponent(place)}`,
+      { signal: controller.signal }
     )
     clearTimeout(timeoutId)
-    
+
     if (!res.ok) return null
     const data = await res.json()
     if (!data.length) return null
@@ -123,7 +121,6 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
     setTimeout(() => setToast(''), 3200)
   }, [])
 
-  // ── Init Leaflet ──────────────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined' || mapRef.current || !mapDivRef.current) return
 
@@ -164,13 +161,11 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
     }
   }, [])
 
-  // ── Switch tile ───────────────────────────────────────────
   useEffect(() => {
     if (!tileRef.current) return
     tileRef.current.setUrl(TILES[tileStyle])
   }, [tileStyle])
 
-  // ── Draw route with waypoints ────────────────────────────
   useEffect(() => {
     if (!mapReady || !mapRef.current || !leafletRef.current) return
     if (!from.trim() || !to.trim()) return
@@ -181,16 +176,14 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
     markersRef.current = []
 
     const run = async () => {
-      // Geocode all points
       const fromCoords = await geocode(from)
       const toCoords = await geocode(to)
-      
-      if (!fromCoords || !toCoords) { 
+
+      if (!fromCoords || !toCoords) {
         showToast('Could not find one or both places. Try city names.')
-        return 
+        return
       }
 
-      // Geocode waypoints that have names but no coordinates
       const waypointResults: [number, number][] = []
       for (const wp of waypoints) {
         if (wp.lat && wp.lon) {
@@ -205,10 +198,8 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
       setEndCoords(toCoords)
       setWaypointCoords(waypointResults)
 
-      // Build complete path
       const allPoints = [fromCoords, ...waypointResults, toCoords]
-      
-      // Calculate total distance
+
       let totalDist = 0
       for (let i = 0; i < allPoints.length - 1; i++) {
         totalDist += haversine(allPoints[i], allPoints[i + 1])
@@ -216,31 +207,28 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
       setDistanceKm(Math.round(totalDist))
       setEtaHours(parseFloat((totalDist / 60).toFixed(1)))
 
-      // Build checkpoints
       const newCheckpoints: Checkpoint[] = [
         { name: from, coords: fromCoords, status: 'passed' }
       ]
-      
+
       waypointResults.forEach((wp, idx) => {
-        newCheckpoints.push({ 
-          name: waypoints[idx]?.name || `Stop ${idx + 1}`, 
-          coords: wp, 
-          status: idx === 0 ? 'active' : 'upcoming' 
+        newCheckpoints.push({
+          name: waypoints[idx]?.name || `Stop ${idx + 1}`,
+          coords: wp,
+          status: idx === 0 ? 'active' : 'upcoming'
         })
       })
-      
+
       newCheckpoints.push({ name: to, coords: toCoords, status: 'upcoming' })
       setCheckpoints(newCheckpoints)
 
-      // Draw route line
       routeRef.current = L.polyline(allPoints, {
-        color: '#2563eb', 
-        weight: 4, 
-        dashArray: '10 6', 
+        color: '#2563eb',
+        weight: 4,
+        dashArray: '10 6',
         lineCap: 'round',
       }).addTo(mapRef.current)
 
-      // Custom pin icons
       const startPinIcon = (color: string, label: string) => L.divIcon({
         className: '',
         html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
@@ -259,26 +247,22 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
         iconSize: [60, 28], iconAnchor: [30, 5],
       })
 
-      // Add start marker
       markersRef.current.push(
         L.marker(fromCoords, { icon: startPinIcon('#16a34a', 'START') }).addTo(mapRef.current)
       )
 
-      // Add waypoint markers
       waypointResults.forEach((wp, idx) => {
         markersRef.current.push(
-          L.marker(wp, { 
-            icon: waypointPinIcon('#f59e0b', waypoints[idx]?.name?.slice(0, 12) || `Stop ${idx + 1}`) 
+          L.marker(wp, {
+            icon: waypointPinIcon('#f59e0b', waypoints[idx]?.name?.slice(0, 12) || `Stop ${idx + 1}`)
           }).addTo(mapRef.current)
         )
       })
 
-      // Add end marker
       markersRef.current.push(
         L.marker(toCoords, { icon: startPinIcon('#dc2626', 'END') }).addTo(mapRef.current)
       )
 
-      // Fit bounds
       const bounds = L.latLngBounds(allPoints)
       mapRef.current.fitBounds(bounds, { padding: [48, 48] })
     }
@@ -286,7 +270,6 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to, waypoints, mapReady])
 
-  // ── Locate user ───────────────────────────────────────────
   const handleLocate = () => {
     if (!navigator.geolocation) { showToast('Geolocation not supported.'); return }
     setIsLocating(true)
@@ -304,16 +287,15 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
   }
 
   const handleRecenter = () => {
-    if (!startCoords || !endCoords || !leafletRef.current) { 
+    if (!startCoords || !endCoords || !leafletRef.current) {
       showToast('Enter a route first.')
-      return 
+      return
     }
     const allPoints = [startCoords, ...waypointCoords, endCoords]
     mapRef.current?.fitBounds(leafletRef.current.latLngBounds(allPoints), { padding: [48,48], animate: true })
     showToast('Map recentered.')
   }
 
-  // ── SOS countdown ─────────────────────────────────────────
   useEffect(() => {
     if (sos.phase !== 'counting') return
     if (sos.countdown <= 0) { setSos({ phase: 'active', countdown: 0 }); showToast('🚨 SOS TRANSMITTED'); return }
@@ -324,7 +306,6 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
   return (
     <div className="relative rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-white">
 
-      {/* SOS countdown overlay */}
       {sos.phase === 'counting' && (
         <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center rounded-xl">
           <div className="relative bg-[#111] border border-red-500/30 rounded-2xl p-8 flex flex-col items-center gap-4 shadow-2xl text-center">
@@ -343,7 +324,6 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
         </div>
       )}
 
-      {/* SOS active banner */}
       {sos.phase === 'active' && (
         <div className="absolute top-0 left-0 right-0 z-40 bg-red-600 text-white px-4 py-2 flex items-center justify-between text-xs font-black">
           <span className="flex items-center gap-2 animate-pulse">
@@ -353,7 +333,6 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
         </div>
       )}
 
-      {/* Map header */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
@@ -377,11 +356,9 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
         </div>
       </div>
 
-      {/* Map frame */}
       <div className="relative" style={{ height: '300px' }}>
         <div ref={mapDivRef} className="w-full h-full z-0" />
 
-        {/* Empty state */}
         {!from.trim() && !to.trim() && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm pointer-events-none">
             <MapPin className="text-blue-400 w-8 h-8 mb-2" />
@@ -390,7 +367,6 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
           </div>
         )}
 
-        {/* HUD controls */}
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl px-4 py-2 shadow-lg">
           <button onClick={handleRecenter} title="Recenter"
             className="w-8 h-8 rounded-full bg-gray-100 hover:bg-blue-50 border border-gray-200 hover:border-blue-300 text-gray-500 hover:text-blue-600 flex items-center justify-center transition active:scale-90">
@@ -429,7 +405,6 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
           </button>
         </div>
 
-        {/* Sat lock feed */}
         {startCoords && (
           <div className="absolute bottom-4 right-3 z-20 bg-black/80 backdrop-blur-md border border-white/10 rounded-xl p-2.5 text-[9px] font-mono flex flex-col gap-1 shadow-lg">
             <span className="text-gray-500 font-sans font-black uppercase tracking-wider mb-0.5 text-[8px]">Sat Lock</span>
@@ -439,13 +414,11 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
           </div>
         )}
 
-        {/* GPS badge */}
         <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 bg-white/90 border border-blue-200 text-blue-600 text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full shadow-sm">
           <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" /> GPS Active
         </div>
       </div>
 
-      {/* Checkpoint strip */}
       {checkpoints.length > 0 && (
         <div className="border-t border-gray-100 px-4 py-3 flex items-center gap-2 overflow-x-auto">
           {checkpoints.map((cp, i) => (
@@ -463,7 +436,6 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
         </div>
       )}
 
-      {/* Stats strip */}
       {distanceKm && (
         <div className="border-t border-gray-100 px-4 py-2.5 grid grid-cols-3 gap-2 bg-gray-50/70">
           <div className="text-center">
@@ -481,7 +453,6 @@ export default function TripMap({ from, to, waypoints = [] }: TripMapProps) {
         </div>
       )}
 
-      {/* Toast */}
       {toast && (
         <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 bg-gray-900 text-white text-xs font-medium px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 whitespace-nowrap pointer-events-none">
           <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping" />

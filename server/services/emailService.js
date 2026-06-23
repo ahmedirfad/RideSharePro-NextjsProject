@@ -1,84 +1,146 @@
-const nodemailer = require('nodemailer');
+// server/services/emailService.js
+const { getTransporter } = require('../config/email');
+const { getTemplate } = require('./emailTemplates');
+const EmailLog = require('../models/EmailLog');
 
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
+const FROM_EMAIL = process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@ridesharepro.com';
+const FROM_NAME = process.env.EMAIL_FROM_NAME || 'RideSharePro';
 
-// Send verification email (for registration)
-const sendVerificationEmail = async (email, otp, name) => {
+// ─── Single send function ──────────────────────────────────────
+const sendEmail = async (to, subject, html) => {
+  const transporter = getTransporter();
+  
   const mailOptions = {
-    from: `"RideSharePro" <${process.env.EMAIL_USER}>`,
-    to: email,
-    subject: 'Verify Your RideSharePro Account',
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff; padding: 30px; border-radius: 16px; border: 1px solid #e8eaed;">
-        <div style="text-align: center;">
-          <div style="font-size: 48px; margin-bottom: 16px;">🚗</div>
-          <h1 style="color: #2563eb;">RideSharePro</h1>
-          <h2>Welcome ${name}!</h2>
-          <p>Thank you for registering. Please verify your email using the OTP below:</p>
-          <div style="background: #f3f4f6; padding: 20px; border-radius: 12px; margin: 20px 0;">
-            <h1 style="color: #2563eb; font-size: 36px; letter-spacing: 8px;">${otp}</h1>
-          </div>
-          <p>This OTP is valid for 10 minutes.</p>
-          <p>If you didn't create an account, please ignore this email.</p>
-          <hr>
-          <p style="font-size: 12px; color: #9ca3af;">&copy; 2026 RideSharePro</p>
-        </div>
-      </div>
-    `
+    from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+    to,
+    subject,
+    html,
+    headers: {
+      'X-Entity-Ref-ID': `email_${Date.now()}`
+    }
   };
 
   try {
-    await transporter.sendMail(mailOptions);
-    console.log(`📧 Verification email sent to ${email}`);
-    return true;
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`📧 Email sent to ${to}: ${info.messageId}`);
+    return info;
   } catch (error) {
-    console.error('Email failed:', error);
-    return false;
+    console.error(`❌ Failed to send email to ${to}:`, error.message);
+    throw error;
   }
 };
 
-// Send password reset email
-const sendPasswordResetEmail = async (email, otp, name) => {
-  const mailOptions = {
-    from: `"RideSharePro" <${process.env.EMAIL_USER}>`,
-    to: email,
-    subject: 'Reset Your RideSharePro Password',
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff; padding: 30px; border-radius: 16px; border: 1px solid #e8eaed;">
-        <div style="text-align: center;">
-          <div style="font-size: 48px; margin-bottom: 16px;">🔐</div>
-          <h1 style="color: #2563eb;">RideSharePro</h1>
-          <h2>Password Reset Request</h2>
-          <p>Hello ${name},</p>
-          <p>You requested to reset your password. Use the OTP below:</p>
-          <div style="background: #f3f4f6; padding: 20px; border-radius: 12px; margin: 20px 0;">
-            <h1 style="color: #2563eb; font-size: 36px; letter-spacing: 8px;">${otp}</h1>
-          </div>
-          <p>This OTP is valid for 10 minutes.</p>
-          <p>If you didn't request this, please ignore this email.</p>
-          <hr>
-          <p style="font-size: 12px; color: #9ca3af;">&copy; 2026 RideSharePro</p>
-        </div>
-      </div>
-    `
-  };
+// ─── Main email sender with queue ─────────────────────────────
+const sendEmailWithQueue = async ({
+  to,
+  type,
+  templateData = {},
+  priority = 'normal',
+  userId = null,
+  delay = null
+}) => {
+  // ✅ Lazy load emailQueue to break circular dependency
+  const { addEmailToQueue, scheduleEmail } = require('./emailQueue');
+  
+  // Get template
+  const { subject, html } = getTemplate(type, templateData);
+
+  if (delay && delay > 0) {
+    // Schedule email
+    return await scheduleEmail({
+      to,
+      subject,
+      html,
+      type,
+      userId,
+      templateData,
+      priority
+    }, delay);
+  }
+
+  // Queue email
+  return await addEmailToQueue({
+    to,
+    subject,
+    html,
+    type,
+    userId,
+    templateData,
+    priority
+  });
+};
+
+// ─── Send immediate (bypass queue) ────────────────────────────
+const sendEmailImmediate = async ({
+  to,
+  type,
+  templateData = {},
+  userId = null
+}) => {
+  // Get template
+  const { subject, html } = getTemplate(type, templateData);
+  
+  // Generate email ID
+  const emailId = `immediate_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+  // Create log
+  await EmailLog.create({
+    emailId,
+    type,
+    to,
+    userId,
+    subject,
+    templateData,
+    status: 'queued'
+  });
 
   try {
-    await transporter.sendMail(mailOptions);
-    console.log(`📧 Password reset email sent to ${email}`);
-    return true;
+    await sendEmail(to, subject, html);
+    
+    await EmailLog.findOneAndUpdate(
+      { emailId },
+      { 
+        status: 'sent',
+        sentAt: new Date(),
+        deliveredAt: new Date()
+      }
+    );
+    
+    return { success: true, emailId };
   } catch (error) {
-    console.error('Email failed:', error);
-    return false;
+    await EmailLog.findOneAndUpdate(
+      { emailId },
+      { 
+        status: 'failed',
+        error: error.message
+      }
+    );
+    throw error;
   }
 };
 
-module.exports = { sendVerificationEmail, sendPasswordResetEmail };
+// ─── Legacy Support ─────────────────────────────────────────────
+const sendVerificationEmailLegacy = async (email, otp, name) => {
+  return await sendEmailWithQueue({
+    to: email,
+    type: 'verification',
+    templateData: { name, otp }
+  });
+};
+
+const sendPasswordResetEmailLegacy = async (email, otp, name) => {
+  return await sendEmailWithQueue({
+    to: email,
+    type: 'password_reset',
+    templateData: { name, otp }
+  });
+};
+
+// ─── Exports ────────────────────────────────────────────────────
+module.exports = {
+  sendEmail,
+  sendEmailWithQueue,
+  sendEmailImmediate,
+  sendVerificationEmail: sendVerificationEmailLegacy,
+  sendPasswordResetEmail: sendPasswordResetEmailLegacy,
+};

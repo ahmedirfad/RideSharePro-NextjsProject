@@ -64,43 +64,27 @@ const MOCK_CITIES = [
 ]
 
 // ─── Search using Nominatim with fallback ──────────────────────────────────────
+// ─── Search using backend proxy ──────────────────────────────────────────────
 async function searchLocations(query: string): Promise<Suggestion[]> {
   if (!query.trim() || query.length < 2) return []
 
-  // Try Nominatim first
   try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 5000)
-    
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ', India')}&format=json&limit=5&addressdetails=1`,
-      {
-        headers: {
-          'User-Agent': 'RideSharePro/1.0 (contact@ridesharepro.com)'
-        },
-        signal: controller.signal
-      }
-    )
-    
-    clearTimeout(timeoutId)
-    
-    if (res.ok) {
-      const data = await res.json()
-      if (data && data.length > 0) {
-        return data.map((item: any) => ({
-          display_name: item.display_name,
-          lat: item.lat,
-          lon: item.lon,
-          type: item.type
-        }))
-      }
+    const response = await api.get(`/geocode/search?q=${encodeURIComponent(query)}`)
+
+    if (response.data && response.data.length > 0) {
+      return response.data.map((item: any) => ({
+        display_name: item.display_name,
+        lat: item.lat,
+        lon: item.lon,
+        type: item.type
+      }))
     }
   } catch (error) {
-    console.log('Nominatim failed, using fallback')
+    console.log('Geocode API failed, using fallback')
   }
 
   // Fallback to mock data
-  const filtered = MOCK_CITIES.filter(city => 
+  const filtered = MOCK_CITIES.filter(city =>
     city.name.toLowerCase().includes(query.toLowerCase()) ||
     city.state.toLowerCase().includes(query.toLowerCase())
   )
@@ -112,7 +96,6 @@ async function searchLocations(query: string): Promise<Suggestion[]> {
     type: 'city'
   }))
 }
-
 // ─── Haversine distance calculation ──────────────────────────────────────
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371

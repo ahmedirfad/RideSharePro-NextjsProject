@@ -1,7 +1,15 @@
 const Trip = require("../models/Trip");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
-const { notify } = require("../utils/notify"); // ✅ ADD THIS
+const { notify } = require("../utils/notify");
+
+// ✅ NEW: Import email functions
+const {
+  sendBookingConfirmationEmail,
+  sendNewBookingAlertEmail,
+  sendBookingCancelledEmail,
+  sendTripReminderEmail
+} = require("../controllers/emailController");
 
 const createBooking = async (req, res) => {
   try {
@@ -51,13 +59,11 @@ const createBooking = async (req, res) => {
       .populate("passengerId", "name email phone")
       .populate("tripId", "from to departureDate departureTime pricePerSeat");
 
-    // ─────────────────────────────────────────────────────
-    // 🔔 NEW: Send notifications
-    // ─────────────────────────────────────────────────────
-    const passenger = await User.findById(passengerId).select("name");
-    const driver = await User.findById(trip.driverId).select("name");
+    // ─── Get user details ──────────────────────────────────
+    const passenger = await User.findById(passengerId).select("name email");
+    const driver = await User.findById(trip.driverId).select("name email");
 
-    // 1. Notify driver
+    // ─── SOCKET NOTIFICATIONS ──────────────────────────────
     await notify(req.io, {
       userId: trip.driverId,
       type: "booking_confirmed",
@@ -67,7 +73,6 @@ const createBooking = async (req, res) => {
       meta: { bookingId: booking._id, tripId: trip._id, seatsBooked }
     });
 
-    // 2. Notify passenger
     await notify(req.io, {
       userId: passengerId,
       type: "booking_confirmed",
@@ -77,13 +82,17 @@ const createBooking = async (req, res) => {
       meta: { bookingId: booking._id, tripId: trip._id }
     });
 
-    // 3. Emit to chat room
     req.io.to(`chat:${booking._id}`).emit("booking_confirmed", {
       bookingId: booking._id,
       passengerId,
       driverId: trip.driverId,
       tripId: trip._id
     });
+
+    // ─── EMAIL NOTIFICATIONS ────────────────────────────────
+    // ✅ FIXED: Pass user objects directly
+    await sendBookingConfirmationEmail(passenger, booking, trip);
+    await sendNewBookingAlertEmail(driver, passenger, booking, trip);
 
     res.status(201).json({
       success: true,
@@ -181,13 +190,13 @@ const cancelBooking = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.userId;
 
-    const booking = await Booking.findById(id).populate("tripId");
+    const booking = await Booking.findById(id).populate("tripId").populate("passengerId", "name email");
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    if (booking.passengerId.toString() !== userId) {
+    if (booking.passengerId._id.toString() !== userId) {
       return res.status(403).json({ message: "Unauthorized" });
     }
 
@@ -195,7 +204,7 @@ const cancelBooking = async (req, res) => {
       return res.status(400).json({ message: "Booking already cancelled" });
     }
 
-    const trip = await Trip.findById(booking.tripId);
+    const trip = await Trip.findById(booking.tripId).populate("driverId", "name email");
     const tripDate = new Date(trip.departureDate);
     const now = new Date();
     const hoursUntilDeparture = (tripDate - now) / (1000 * 60 * 60);
@@ -204,27 +213,25 @@ const cancelBooking = async (req, res) => {
       return res.status(400).json({ message: "Cannot cancel within 24 hours of departure" });
     }
 
+    const passenger = await User.findById(userId).select("name email");
+    const refundAmount = booking.totalAmount || 0;
+
     booking.status = "cancelled";
     await booking.save();
 
     trip.seatsAvailable += booking.seatsBooked;
     await trip.save();
 
-    // ─────────────────────────────────────────────────────
-    // 🔔 NEW: Notify driver
-    // ─────────────────────────────────────────────────────
-    const passenger = await User.findById(userId).select("name");
-    
+    // ─── SOCKET NOTIFICATIONS ──────────────────────────────
     await notify(req.io, {
       userId: trip.driverId,
-      type: "booking_confirmed", // Reuse type or add "booking_cancelled"
+      type: "booking_confirmed",
       title: "❌ Booking Cancelled",
       body: `${passenger?.name || "Someone"} cancelled their booking on ${trip.from} → ${trip.to}`,
       link: `/trip/${trip._id}`,
       meta: { bookingId: booking._id, tripId: trip._id }
     });
 
-    // Notify passenger (confirmation)
     await notify(req.io, {
       userId: userId,
       type: "booking_confirmed",
@@ -233,6 +240,11 @@ const cancelBooking = async (req, res) => {
       link: `/trips`,
       meta: { bookingId: booking._id, tripId: trip._id }
     });
+
+    // ─── EMAIL NOTIFICATIONS ────────────────────────────────
+    // ✅ FIXED: Pass user objects directly
+    await sendBookingCancelledEmail(trip.driverId, booking, trip, passenger?.name || 'Passenger', refundAmount);
+    await sendBookingCancelledEmail(passenger, booking, trip, 'You', refundAmount);
 
     res.json({
       success: true,
@@ -249,7 +261,7 @@ const confirmBooking = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.userId;
 
-    const booking = await Booking.findById(id).populate("tripId").populate("passengerId", "name");
+    const booking = await Booking.findById(id).populate("tripId").populate("passengerId", "name email");
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
@@ -266,11 +278,10 @@ const confirmBooking = async (req, res) => {
     booking.status = "confirmed";
     await booking.save();
 
-    // ─────────────────────────────────────────────────────
-    // 🔔 NEW: Notify passenger
-    // ─────────────────────────────────────────────────────
-    const driver = await User.findById(userId).select("name");
-    
+    const driver = await User.findById(userId).select("name email");
+    const trip = await Trip.findById(booking.tripId);
+
+    // ─── SOCKET NOTIFICATIONS ──────────────────────────────
     await notify(req.io, {
       userId: booking.passengerId._id,
       type: "booking_confirmed",
@@ -279,6 +290,10 @@ const confirmBooking = async (req, res) => {
       link: `/messages?bookingId=${booking._id}`,
       meta: { bookingId: booking._id, tripId: booking.tripId._id }
     });
+
+    // ─── EMAIL NOTIFICATIONS ────────────────────────────────
+    // ✅ FIXED: Pass user objects directly
+    await sendBookingConfirmationEmail(booking.passengerId, booking, trip);
 
     res.json({
       success: true,
@@ -298,7 +313,9 @@ const updateBookingStatus = async (req, res) => {
     const { status } = req.body;
     const userId = req.user.userId;
 
-    const booking = await Booking.findById(id).populate("tripId").populate("passengerId", "name");
+    const booking = await Booking.findById(id)
+      .populate("tripId")
+      .populate("passengerId", "name email");
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
@@ -315,13 +332,9 @@ const updateBookingStatus = async (req, res) => {
     booking.status = status;
     await booking.save();
 
-    // ─────────────────────────────────────────────────────
-    // 🔔 NEW: Notify other party about status change
-    // ─────────────────────────────────────────────────────
     const actor = await User.findById(userId).select("name");
     const otherUserId = isDriver ? booking.passengerId._id : booking.tripId.driverId;
 
-    // Only notify if status actually changed
     if (oldStatus !== status) {
       await notify(req.io, {
         userId: otherUserId,

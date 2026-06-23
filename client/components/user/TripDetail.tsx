@@ -270,7 +270,7 @@ export default function TripDetailsPage() {
         }
 
         // ─── Set segment orders ──────────────────────────────────────────────
-        if () {
+        if (isGuestView) {
           setSelectedFromOrder(guestFromOrder)
           setSelectedToOrder(guestToOrder)
           if (guestFare > 0) {
