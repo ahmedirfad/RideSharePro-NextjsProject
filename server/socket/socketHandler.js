@@ -2,6 +2,7 @@ const jwt = require("jsonwebtoken");
 const Message = require("../models/Message");
 const Notification = require("../models/Notification");
 const Booking = require("../models/Booking");
+const { sendPushToUser } = require('../controllers/pushController')
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -42,9 +43,9 @@ async function assertBookingParty(bookingId, userId) {
 // ── Push notification helper (call from anywhere in your app) ──────────────
 // ✅ FIX: Proper serialization - convert ObjectId to string
 async function pushNotification(io, { userId, type, title, body, link = "", meta = {} }) {
-  const notif = await Notification.create({ userId, type, title, body, link, meta });
-  
-  // ✅ FIX: Serialize properly - convert _id to string and format date
+  const notif = await Notification.create({ userId, type, title, body, link, meta })
+
+  // Real-time (existing)
   io.to(userRoom(userId)).emit("new_notification", {
     id: notif._id.toString(),
     type: notif.type,
@@ -53,8 +54,12 @@ async function pushNotification(io, { userId, type, title, body, link = "", meta
     link: notif.link,
     read: false,
     createdAt: notif.createdAt.toISOString(),
-  });
-  return notif;
+  })
+
+  // Push notification (new) — fires even when tab is closed
+  await sendPushToUser(userId, { title, body, link })
+
+  return notif
 }
 
 // ── Main socket setup ──────────────────────────────────────────────────────
@@ -191,7 +196,7 @@ function setupSocket(io) {
           { $addToSet: { readBy: userId } }
         );
         socket.to(chatRoom(bookingId)).emit("messages_read", { bookingId, readBy: userId });
-        
+
         // ✅ NEW: Send updated unread count back to client
         const unreadCount = await Message.countDocuments({
           bookingId,
@@ -199,8 +204,8 @@ function setupSocket(io) {
           senderId: { $ne: userId }
         });
         socket.emit("unread_count_updated", { bookingId, unreadCount });
-        
-      } catch (_) {}
+
+      } catch (_) { }
     });
 
     // ── mark_notification_read ────────────────────────────
@@ -210,7 +215,7 @@ function setupSocket(io) {
           { _id: notificationId, userId },
           { read: true }
         );
-      } catch (_) {}
+      } catch (_) { }
     });
 
     // ── mark_all_notifications_read ───────────────────────
@@ -218,7 +223,7 @@ function setupSocket(io) {
       try {
         await Notification.updateMany({ userId, read: false }, { read: true });
         socket.emit("all_notifications_read");
-      } catch (_) {}
+      } catch (_) { }
     });
 
     // ── disconnect ─────────────────────────────────────────

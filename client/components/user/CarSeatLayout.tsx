@@ -1,9 +1,8 @@
 'use client'
 
 // CarSeatLayout.tsx
-// Top-down car interior view — driver seat fixed top-RIGHT (India: right-hand drive),
-// passenger seats scale dynamically from totalSeats prop.
-// Matches RedBus-style seat picker UX for a car (4-seater, 5-seater, etc.)
+// Top-down car interior view — driver seat fixed top-RIGHT (India: right-hand drive)
+// Colors: Blue outline for available, Full blue for selected, Gray disabled for booked
 
 interface SeatInfo {
   seatNumber: number
@@ -11,24 +10,28 @@ interface SeatInfo {
 }
 
 interface CarSeatLayoutProps {
-  totalSeats: number                          // passenger seats only (excludes driver)
-  seatMap: SeatInfo[]                        // availability per seat
-  selectedSeat: number | null
-  setSelectedSeat: (seat: number | null) => void
+  totalSeats: number
+  seatMap: SeatInfo[]
+  selectedSeats?: number[] // ✅ Make optional
+  onSeatToggle: (seatNumber: number) => void
   womenOnly?: boolean
+  disabled?: boolean
+  maxSelectable?: number
 }
 
 // ─── Seat renders ──────────────────────────────────────────────────────────────
 function Seat({
   seatNumber,
-  state,           // 'available' | 'selected' | 'booked' | 'driver'
+  state,
   onClick,
+  disabled = false,
 }: {
   seatNumber: number
   state: 'available' | 'selected' | 'booked' | 'driver'
   onClick?: () => void
+  disabled?: boolean
 }) {
-  const isClickable = state === 'available' || state === 'selected'
+  const isClickable = (state === 'available' || state === 'selected') && !disabled
 
   const backBase = 'rounded-t-lg h-3 w-full border-x border-t transition-colors duration-150'
   const bodyBase = 'rounded-b-xl h-12 w-full border flex flex-col items-center justify-center gap-0.5 transition-colors duration-150'
@@ -41,10 +44,10 @@ function Seat({
       icon: 'text-gray-400 dark:text-gray-600',
     },
     available: {
-      back: `${backBase} bg-white border-gray-300 hover:border-blue-400 dark:bg-gray-900 dark:border-gray-600 dark:hover:border-blue-500`,
-      body: `${bodyBase} bg-white border-gray-300 hover:border-blue-400 hover:bg-blue-50 dark:bg-gray-900 dark:border-gray-600 dark:hover:border-blue-500 dark:hover:bg-blue-950`,
+      back: `${backBase} bg-white border-blue-400 hover:border-blue-600 dark:bg-gray-900 dark:border-blue-500 dark:hover:border-blue-400`,
+      body: `${bodyBase} bg-white border-blue-400 hover:border-blue-600 hover:bg-blue-50 dark:bg-gray-900 dark:border-blue-500 dark:hover:border-blue-400 dark:hover:bg-blue-950`,
       label: 'text-gray-500 dark:text-gray-400',
-      icon: 'text-gray-400 dark:text-gray-500',
+      icon: 'text-blue-500 dark:text-blue-400',
     },
     selected: {
       back: `${backBase} bg-blue-600 border-blue-600`,
@@ -53,10 +56,10 @@ function Seat({
       icon: 'text-white',
     },
     booked: {
-      back: `${backBase} bg-gray-100 border-dashed border-gray-300 dark:bg-gray-800 dark:border-gray-600`,
-      body: `${bodyBase} bg-gray-100 border-dashed border-gray-300 dark:bg-gray-800 dark:border-gray-600`,
-      label: 'text-gray-400 dark:text-gray-600',
-      icon: 'text-gray-300 dark:text-gray-600',
+      back: `${backBase} bg-gray-200 border-gray-200 dark:bg-gray-700 dark:border-gray-600`,
+      body: `${bodyBase} bg-gray-200 border-gray-200 dark:bg-gray-700 dark:border-gray-600`,
+      label: 'text-gray-400 dark:text-gray-500',
+      icon: 'text-gray-400 dark:text-gray-500',
     },
   }
 
@@ -73,7 +76,7 @@ function Seat({
       }
       onClick={isClickable ? onClick : undefined}
       onKeyDown={isClickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') onClick?.() } : undefined}
-      className={`flex flex-col items-center gap-0.5 w-[52px] shrink-0 select-none ${isClickable ? 'cursor-pointer' : 'cursor-default'}`}
+      className={`flex flex-col items-center gap-0.5 w-[52px] shrink-0 select-none ${isClickable ? 'cursor-pointer hover:scale-105 transition-transform' : 'cursor-default'}`}
     >
       {/* Headrest */}
       <div className={s.back} />
@@ -81,7 +84,6 @@ function Seat({
       {/* Seat body */}
       <div className={s.body}>
         {state === 'driver' ? (
-          // Steering wheel icon (inline SVG — no emoji)
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
             className={`w-5 h-5 ${s.icon}`} aria-hidden="true">
             <circle cx="12" cy="12" r="9" />
@@ -91,20 +93,17 @@ function Seat({
             <line x1="20.5" y1="16.5" x2="15.2" y2="13.5" />
           </svg>
         ) : state === 'booked' ? (
-          // X mark
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
             className={`w-4 h-4 ${s.icon}`} aria-hidden="true">
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
         ) : state === 'selected' ? (
-          // Checkmark
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
             className={`w-4 h-4 ${s.icon}`} aria-hidden="true">
             <polyline points="20 6 9 17 4 12" />
           </svg>
         ) : (
-          // Person silhouette
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
             className={`w-4 h-4 ${s.icon}`} aria-hidden="true">
             <circle cx="12" cy="8" r="3.5" />
@@ -149,27 +148,34 @@ function RowDivider() {
 export default function CarSeatLayout({
   totalSeats,
   seatMap,
-  selectedSeat,
-  setSelectedSeat,
+  selectedSeats = [], // ✅ Default empty array
+  onSeatToggle,
   womenOnly = false,
+  disabled = false,
+  maxSelectable = 6,
 }: CarSeatLayoutProps) {
 
   const getSeatState = (n: number): 'available' | 'selected' | 'booked' => {
-    if (selectedSeat === n) return 'selected'
+    if (selectedSeats.includes(n)) return 'selected'
     const info = seatMap.find(s => s.seatNumber === n)
     if (!info) return 'available'
     return info.available ? 'available' : 'booked'
   }
 
   const handleClick = (n: number) => {
+    if (disabled) return
     const info = seatMap.find(s => s.seatNumber === n)
     if (info && !info.available) return
-    setSelectedSeat(selectedSeat === n ? null : n)
+    
+    if (!selectedSeats.includes(n) && selectedSeats.length >= maxSelectable) {
+      alert(`Maximum ${maxSelectable} seats allowed`)
+      return
+    }
+    
+    onSeatToggle(n)
   }
 
   // ── Layout logic ────────────────────────────────────────────────────────────
-  // Seat 1 = front passenger (next to driver)
-  // Seats 2..N = rear rows of up to 3 per row
   const rearSeats: number[] = Array.from({ length: totalSeats - 1 }, (_, i) => i + 2)
   const rearRows: number[][] = []
   const REAR_PER_ROW = 3
@@ -186,15 +192,15 @@ export default function CarSeatLayout({
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4 text-xs text-gray-400">
           <span className="flex items-center gap-1.5">
-            <span className="w-3.5 h-3.5 rounded bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-600 inline-block" />
+            <span className="w-3.5 h-3.5 rounded bg-white border-2 border-blue-400 dark:bg-gray-900 dark:border-blue-500 inline-block" />
             Available
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-3.5 h-3.5 rounded bg-blue-600 inline-block" />
-            Selected
+            <span className="w-3.5 h-3.5 rounded bg-blue-600 border-2 border-blue-600 inline-block" />
+            {selectedSeats.length === 1 ? 'Selected' : `${selectedSeats.length} Selected`}
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-3.5 h-3.5 rounded bg-gray-100 border border-dashed border-gray-300 dark:bg-gray-800 dark:border-gray-600 inline-block" />
+            <span className="w-3.5 h-3.5 rounded bg-gray-200 border-2 border-gray-200 dark:bg-gray-700 dark:border-gray-600 inline-block" />
             Booked
           </span>
         </div>
@@ -223,11 +229,12 @@ export default function CarSeatLayout({
               seatNumber={1}
               state={getSeatState(1)}
               onClick={() => handleClick(1)}
+              disabled={disabled}
             />
           )}
           <CenterConsole />
           {/* Driver on RIGHT */}
-          <Seat seatNumber={0} state="driver" />
+          <Seat seatNumber={0} state="driver" disabled={true} />
         </div>
 
         {/* Rear rows */}
@@ -242,6 +249,7 @@ export default function CarSeatLayout({
                     seatNumber={sn}
                     state={getSeatState(sn)}
                     onClick={() => handleClick(sn)}
+                    disabled={disabled}
                   />
                 ))}
               </div>
@@ -259,12 +267,17 @@ export default function CarSeatLayout({
 
       {/* Selection feedback */}
       <div className="mt-3 text-center min-h-[20px]">
-        {selectedSeat ? (
+        {disabled ? (
+          <p className="text-xs text-gray-400">View only mode</p>
+        ) : selectedSeats.length > 0 ? (
           <p className="text-sm font-semibold text-blue-600">
-            Seat {selectedSeat} selected
+            {selectedSeats.length} seat{selectedSeats.length > 1 ? 's' : ''} selected: 
+            <span className="font-bold ml-1">
+              {selectedSeats.sort((a, b) => a - b).join(', ')}
+            </span>
           </p>
         ) : (
-          <p className="text-xs text-gray-400">Tap an available seat to select</p>
+          <p className="text-xs text-gray-400">Tap available seats to select</p>
         )}
       </div>
     </div>

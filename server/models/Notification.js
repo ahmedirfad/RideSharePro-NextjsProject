@@ -7,6 +7,7 @@ const NotificationSchema = new mongoose.Schema(
       type: String,
       enum: [
         "booking_confirmed",
+        "booking_cancelled",
         "trip_starting",
         "trip_completed",
         "dispute_filed",

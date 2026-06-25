@@ -17,7 +17,11 @@ const disputeRoutes  = require("./routes/disputeRoutes");
 const messageRoutes  = require("./routes/messageRoutes");
 const notifRoutes    = require("./routes/notificationRoutes");
 const emailRoutes    = require("./routes/emailRoutes");
-const geocodeRoutes = require('./routes/geocodeRoutes'); // ✅ NEW
+const geocodeRoutes = require('./routes/geocodeRoutes'); 
+const paymentRoutes = require("./routes/paymentRoutes");
+const pushRoutes = require("./routes/pushRoutes");
+const quickReplyRoutes = require("./routes/quickReplyRoutes");
+const refundRoutes = require('./routes/refundRoutes');
 
 const { setupSocket } = require("./socket/socketHandler");
 const { startEmailCron } = require("./services/emailCron"); // ✅ NEW
@@ -64,6 +68,10 @@ app.use("/api/messages",      messageRoutes);
 app.use("/api/notifications", notifRoutes);
 app.use("/api/emails",        emailRoutes); // ✅ NEW
 app.use("/api/geocode", geocodeRoutes);
+app.use("/api/payments", paymentRoutes );
+app.use("/api/push", pushRoutes);
+app.use("/api/quick-replies", quickReplyRoutes);
+app.use("/api/refunds",       refundRoutes);
 
 app.get("/health", (_req, res) => res.json({ message: "Server is running" }));
 

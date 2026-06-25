@@ -14,7 +14,7 @@ const UserSchema = new mongoose.Schema(
     },
 
     // Google OAuth
-    googleId:     { type: String, default: null },
+    googleId: { type: String, default: null },
     authProvider: { type: String, enum: ["local", "google"], default: "local" },
 
     role: {
@@ -23,19 +23,24 @@ const UserSchema = new mongoose.Schema(
       default: "user",
     },
 
-    profilePhoto:     { type: String, default: "" },
-    isVerified:       { type: Boolean, default: false },
-    isEmailVerified:  { type: Boolean, default: false },
+    profilePhoto: { type: String, default: "" },
+    isVerified: { type: Boolean, default: false },
+    isEmailVerified: { type: Boolean, default: false },
     emergencyContact: { type: String, default: "" },
-    location:         { type: String, default: "" },
+    location: { type: String, default: "" },
 
     // ✅ NEW — admin moderation
-    isSuspended:     { type: Boolean, default: false },
-    suspendedAt:     { type: Date, default: null },
+    isSuspended: { type: Boolean, default: false },
+    suspendedAt: { type: Date, default: null },
     suspendedReason: { type: String, default: "" },
 
-    rating:       { type: Number, default: 0 },
+    rating: { type: Number, default: 0 },
     totalRatings: { type: Number, default: 0 },
+
+    pushSubscription: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    }
   },
   { timestamps: true }
 );

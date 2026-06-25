@@ -12,6 +12,11 @@ import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
 import { useSocket } from '@/hooks/useSocket'
 import CarSeatLayout from '@/components/user/CarSeatLayout'
+import { loadStripe } from '@stripe/stripe-js'
+import { Elements } from '@stripe/react-stripe-js'
+import StripePaymentSection from '@/components/user/StripePaymentSection'
+
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Step = 'review' | 'payment' | 'confirmed'
@@ -35,11 +40,11 @@ function SectionHeader({ title, sub }: { title: string; sub?: string }) {
 }
 
 // ─── Trip Summary with Segment Info ─────────────────────────────────────────────
-function TripSummary({ trip, fromName, toName, seatNumber, distanceKm }: { 
-  trip: any; fromName: string; toName: string; seatNumber: number; distanceKm: number 
+function TripSummary({ trip, fromName, toName, seatNumbers, totalSeats, distanceKm }: {
+  trip: any; fromName: string; toName: string; seatNumbers: number[]; totalSeats: number; distanceKm: number
 }) {
   if (!trip) return null
-  
+
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -50,6 +55,11 @@ function TripSummary({ trip, fromName, toName, seatNumber, distanceKm }: {
   }
 
   const estimatedDuration = Math.round(distanceKm / 60 * 60)
+
+  // Format seat numbers display
+  const seatDisplay = seatNumbers.length > 1
+    ? seatNumbers.sort((a, b) => a - b).join(', ')
+    : `Seat ${seatNumbers[0] || 'N/A'}`
 
   return (
     <SectionCard>
@@ -72,8 +82,13 @@ function TripSummary({ trip, fromName, toName, seatNumber, distanceKm }: {
           <div className="mt-2 pt-2 border-t border-blue-100 flex justify-between text-xs">
             <span className="text-gray-500">{distanceKm} km</span>
             <span className="text-gray-500">~{estimatedDuration} min drive</span>
-            <span className="font-semibold text-blue-700">Seat {seatNumber}</span>
+            <span className="font-semibold text-blue-700">{seatDisplay}</span>
           </div>
+          {totalSeats > 1 && (
+            <div className="mt-1 text-[10px] text-blue-600 font-medium">
+              {totalSeats} seats selected
+            </div>
+          )}
         </div>
 
         {/* Full Route */}
@@ -142,21 +157,25 @@ function TripSummary({ trip, fromName, toName, seatNumber, distanceKm }: {
 }
 
 // ─── Price Details ────────────────────────────────────────────────────────────
-function PriceDetails({ fare, platformFee, total, promoApplied, promoDiscount }: { 
-  fare: number; platformFee: number; total: number; promoApplied: boolean; promoDiscount: number 
+function PriceDetails({ fare, totalSeats, platformFee, total, promoApplied, promoDiscount }: {
+  fare: number; totalSeats: number; platformFee: number; total: number; promoApplied: boolean; promoDiscount: number
 }) {
+  const subtotal = fare * totalSeats
+  const totalPlatformFee = Math.round(subtotal * 0.05)
+  const finalTotal = subtotal + totalPlatformFee - (promoApplied ? promoDiscount : 0)
+
   return (
     <SectionCard>
       <SectionHeader title="Price Details" />
       <div className="p-6 space-y-3">
         <div className="space-y-2.5 text-sm">
           <div className="flex justify-between text-gray-600">
-            <span>Your Segment</span>
-            <span className="font-medium text-gray-900">₹{fare}</span>
+            <span>{totalSeats} seat{totalSeats > 1 ? 's' : ''} × ₹{fare}</span>
+            <span className="font-medium text-gray-900">₹{subtotal}</span>
           </div>
           <div className="flex justify-between text-gray-600">
             <span>Platform fee (5%)</span>
-            <span className="font-medium text-gray-900">₹{platformFee}</span>
+            <span className="font-medium text-gray-900">₹{totalPlatformFee}</span>
           </div>
           {promoApplied && (
             <div className="flex justify-between text-green-600">
@@ -167,7 +186,7 @@ function PriceDetails({ fare, platformFee, total, promoApplied, promoDiscount }:
         </div>
         <div className="border-t border-gray-100 pt-3 flex justify-between items-center">
           <span className="font-bold text-gray-900">Total</span>
-          <span className="text-2xl font-black text-blue-600" style={{ fontFamily: "'Outfit',sans-serif" }}>₹{total}</span>
+          <span className="text-2xl font-black text-blue-600" style={{ fontFamily: "'Outfit',sans-serif" }}>₹{finalTotal}</span>
         </div>
       </div>
     </SectionCard>
@@ -203,11 +222,10 @@ function PromoCode({ onApply }: { onApply: (discount: number) => void }) {
           <Tag size={12} /> Promo Code
         </p>
         <div className="flex gap-2">
-          <div className={`flex-1 flex items-center gap-2 border rounded-xl px-3 py-2.5 transition ${
-            state === 'error' ? 'border-red-300 bg-red-50' :
+          <div className={`flex-1 flex items-center gap-2 border rounded-xl px-3 py-2.5 transition ${state === 'error' ? 'border-red-300 bg-red-50' :
             state === 'success' ? 'border-green-300 bg-green-50' :
-            'border-gray-200 bg-gray-50 focus-within:border-blue-400 focus-within:bg-white'
-          }`}>
+              'border-gray-200 bg-gray-50 focus-within:border-blue-400 focus-within:bg-white'
+            }`}>
             <Tag size={13} className={state === 'success' ? 'text-green-500' : state === 'error' ? 'text-red-400' : 'text-gray-400'} />
             <input
               value={code}
@@ -227,9 +245,8 @@ function PromoCode({ onApply }: { onApply: (discount: number) => void }) {
           </button>
         </div>
         {msg && (
-          <p className={`text-xs mt-2 flex items-center gap-1 font-medium ${
-            state === 'success' ? 'text-green-600' : 'text-red-500'
-          }`}>
+          <p className={`text-xs mt-2 flex items-center gap-1 font-medium ${state === 'success' ? 'text-green-600' : 'text-red-500'
+            }`}>
             {state === 'success' ? <Check size={11} /> : <AlertCircle size={11} />} {msg}
           </p>
         )}
@@ -248,7 +265,7 @@ function PaymentSection() {
   const formatCard = (val: string) => val.replace(/\D/g, '').replace(/(.{4})/g, '$1 ').trim().slice(0, 19)
   const formatExpiry = (val: string) => {
     const d = val.replace(/\D/g, '')
-    return d.length >= 3 ? `${d.slice(0,2)}/${d.slice(2,4)}` : d
+    return d.length >= 3 ? `${d.slice(0, 2)}/${d.slice(2, 4)}` : d
   }
 
   return (
@@ -284,7 +301,7 @@ function PaymentSection() {
             <label className="text-xs font-semibold text-gray-500 mb-1.5 block">CVC</label>
             <input
               value={cvc}
-              onChange={e => setCvc(e.target.value.replace(/\D/g,'').slice(0,3))}
+              onChange={e => setCvc(e.target.value.replace(/\D/g, '').slice(0, 3))}
               placeholder="123"
               type="password"
               className="w-full border border-gray-200 rounded-xl px-3.5 py-3 text-sm outline-none text-gray-800 placeholder-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
@@ -325,13 +342,17 @@ function TrustBadges() {
 }
 
 // ─── Confirmation Screen ──────────────────────────────────────────────────────
-function ConfirmationScreen({ bookingId, trip, fromName, toName, seatNumber, fare }: { 
-  bookingId: string; trip: any; fromName: string; toName: string; seatNumber: number; fare: number 
+function ConfirmationScreen({ bookingId, trip, fromName, toName, seatNumbers, totalSeats, fare }: {
+  bookingId: string; trip: any; fromName: string; toName: string; seatNumbers: number[]; totalSeats: number; fare: number
 }) {
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   }
+
+  const seatDisplay = seatNumbers.length > 1
+    ? seatNumbers.sort((a, b) => a - b).join(', ')
+    : `Seat ${seatNumbers[0] || 'N/A'}`
 
   return (
     <div className="min-h-[70vh] flex flex-col items-center justify-center text-center px-6 py-16">
@@ -344,7 +365,7 @@ function ConfirmationScreen({ bookingId, trip, fromName, toName, seatNumber, far
       <h2 className="text-3xl font-black text-gray-900 mb-2" style={{ fontFamily: "'Outfit',sans-serif" }}>
         Booking Confirmed!
       </h2>
-      <p className="text-gray-500 text-sm mb-1">Your seat is reserved. Safe travels!</p>
+      <p className="text-gray-500 text-sm mb-1">Your seat{totalSeats > 1 ? 's are' : ' is'} reserved. Safe travels!</p>
       <p className="text-xs text-gray-400 mb-8">Booking ID: <span className="font-mono font-bold text-gray-600">{bookingId}</span></p>
 
       <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm w-full max-w-sm mb-6 text-left">
@@ -354,13 +375,16 @@ function ConfirmationScreen({ bookingId, trip, fromName, toName, seatNumber, far
         </div>
         <div className="space-y-2.5 text-sm">
           <div className="flex justify-between text-gray-600"><span>Journey</span><span className="font-semibold text-gray-900">{fromName} → {toName}</span></div>
-          <div className="flex justify-between text-gray-600"><span>Seat</span><span className="font-semibold text-gray-900">Seat {seatNumber}</span></div>
+          <div className="flex justify-between text-gray-600">
+            <span>Seat{totalSeats > 1 ? 's' : ''}</span>
+            <span className="font-semibold text-gray-900">{seatDisplay}</span>
+          </div>
           <div className="flex justify-between text-gray-600"><span>Date</span><span className="font-semibold text-gray-900">{formatDate(trip?.departureDate)} · {trip?.departureTime}</span></div>
           <div className="flex justify-between text-gray-600"><span>Driver</span><span className="font-semibold text-gray-900">{trip?.driverId?.name}</span></div>
           {trip?.vehicleInfo && (
             <div className="flex justify-between text-gray-600"><span>Vehicle</span><span className="font-semibold text-gray-900">{trip.vehicleInfo}</span></div>
           )}
-          <div className="flex justify-between border-t border-gray-100 pt-2.5"><span className="font-bold text-gray-900">Paid</span><span className="font-black text-blue-600">₹{fare}</span></div>
+          <div className="flex justify-between border-t border-gray-100 pt-2.5"><span className="font-bold text-gray-900">Paid</span><span className="font-black text-blue-600">₹{fare * totalSeats}</span></div>
         </div>
       </div>
 
@@ -381,20 +405,31 @@ function ConfirmationScreen({ bookingId, trip, fromName, toName, seatNumber, far
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-export default function CheckoutPage({ tripId }: { tripId: string }) {
+export default function CheckoutPage() {
   const router = useRouter()
+  const params = useParams()
   const searchParams = useSearchParams()
   const { isAuthenticated, user } = useAuthStore()
   const socket = useSocket()
-  
+
+  const tripId = params.id as string
+
   const fromOrder = searchParams.get('fromOrder')
   const toOrder = searchParams.get('toOrder')
   const seatNumber = searchParams.get('seatNumber')
+  const seatsParam = searchParams.get('seats') // ✅ Multiple seats
   const segmentFare = searchParams.get('fare')
   const segmentDistance = searchParams.get('distance')
   const fromName = searchParams.get('from') || ''
   const toName = searchParams.get('to') || ''
-  
+  const departureDate = searchParams.get('departureDate') || ''
+  const departureTime = searchParams.get('departureTime') || ''
+
+  // ✅ Parse multiple seats
+  const seatNumbers = seatsParam ? seatsParam.split(',').map(Number) : seatNumber ? [parseInt(seatNumber)] : []
+  const primarySeat = seatNumbers.length > 0 ? seatNumbers[0] : 0
+  const totalSelectedSeats = seatNumbers.length || 1
+
   const [step, setStep] = useState<Step>('review')
   const [promoApplied, setPromoApplied] = useState(false)
   const [promoDiscount, setPromoDiscount] = useState(0)
@@ -404,13 +439,15 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
   const [error, setError] = useState('')
   const [bookingId, setBookingId] = useState('')
   const [seatMap, setSeatMap] = useState<any[]>([])
+  const [clientSecret, setClientSecret] = useState('')
+  const [stripeAmount, setStripeAmount] = useState(0)
 
   useEffect(() => {
-    if (!fromOrder || !toOrder || !seatNumber || !segmentFare) {
+    if (!fromOrder || !toOrder || seatNumbers.length === 0 || !segmentFare) {
       setError('Missing booking information. Please go back and select your journey.')
       setLoading(false)
     }
-  }, [fromOrder, toOrder, seatNumber, segmentFare])
+  }, [fromOrder, toOrder, seatNumbers, segmentFare])
 
   // Fetch trip details
   useEffect(() => {
@@ -420,7 +457,7 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
         setLoading(false)
         return
       }
-      
+
       try {
         const response = await api.get(`/trips/${tripId}`)
         if (response.data.success) {
@@ -434,7 +471,7 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
         setLoading(false)
       }
     }
-    
+
     fetchTrip()
   }, [tripId])
 
@@ -463,83 +500,44 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
     else { setPromoApplied(false); setPromoDiscount(0) }
   }
 
-  const handleBook = async () => {
+  const handleBook = async (paymentIntentId: string) => {
     if (!isAuthenticated) {
       router.push('/login')
       return
     }
-    
-    if (!trip || !fromOrder || !toOrder || !seatNumber) return
-    
+
+    if (!trip || !fromOrder || !toOrder || seatNumbers.length === 0) return
+
     setBooking(true)
     setError('')
-    
+
     try {
+      // ✅ Send all seats in ONE request (backend needs to support seatNumbers array)
       const response = await api.post(`/trips/${tripId}/book`, {
         fromOrder: parseInt(fromOrder),
         toOrder: parseInt(toOrder),
+        seatNumbers: seatNumbers,
+        paymentIntentId // ✅ Send array of all seats
       })
-      
+
       if (response.data.success) {
-        const bookingId = response.data.data.bookingId
+        const bookingIds = response.data.data.bookingIds || []
+        const bookingId = bookingIds.join(',') || 'multiple'
         setBookingId(bookingId)
-        
-        // ─── Send real-time notifications via Socket.IO ──────────────────────
-        if (socket) {
-          // Notify driver about new booking
-          socket.emit('notification:send', {
-            userId: trip.driverId._id,
-            type: 'booking_confirmed',
-            title: 'New Booking! 🚗',
-            body: `${user?.name || 'Someone'} booked seat ${seatNumber} on your trip from ${trip.from} to ${trip.to}`,
-            link: `/trip/${tripId}`,
-            meta: {
-              bookingId,
-              tripId,
-              seatNumber,
-              passengerId: user?.id,
-              from: trip.from,
-              to: trip.to,
-              departureDate: trip.departureDate,
-            },
-          })
 
-          // Notify passenger (confirmation)
-          socket.emit('notification:send', {
-            userId: user?.id,
-            type: 'booking_confirmed',
-            title: 'Booking Confirmed! ✅',
-            body: `Your seat ${seatNumber} is confirmed on trip from ${trip.from} to ${trip.to}`,
-            link: `/trips`,
-            meta: {
-              bookingId,
-              tripId,
-              seatNumber,
-              driverId: trip.driverId._id,
-              driverName: trip.driverId.name,
-            },
-          })
-
-          // Broadcast to admin for monitoring
-          socket.emit('notification:send', {
-            userId: 'admin',
-            type: 'booking_confirmed',
-            title: 'New Booking Alert!',
-            body: `New booking on trip ${trip.from} → ${trip.to}`,
-            link: `/admin/bookings/${bookingId}`,
-            meta: {
-              bookingId,
-              tripId,
-              passenger: user?.name,
-              driver: trip.driverId.name,
-            },
-          })
-        }
 
         setStep('confirmed')
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Booking failed. Please try again.')
+      // ✅ Better error handling
+      const errorMsg = err.response?.data?.message || 'Booking failed. Please try again.'
+
+      // If backend doesn't support multiple seats, show helpful message
+      if (errorMsg.includes('seat') || errorMsg.includes('booked')) {
+        setError(`Some seats are already booked. Please try selecting different seats.`)
+      } else {
+        setError(errorMsg)
+      }
     } finally {
       setBooking(false)
     }
@@ -573,20 +571,22 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
 
   if (step === 'confirmed') {
     return (
-      <ConfirmationScreen 
-        bookingId={bookingId} 
-        trip={trip} 
+      <ConfirmationScreen
+        bookingId={bookingId}
+        trip={trip}
         fromName={fromName}
         toName={toName}
-        seatNumber={parseInt(seatNumber || '0')}
+        seatNumbers={seatNumbers}
+        totalSeats={totalSelectedSeats}
         fare={parseInt(segmentFare || '0')}
       />
     )
   }
 
   const fare = parseInt(segmentFare || '0')
-  const platformFee = Math.round(fare * 0.05)
-  const total = fare + platformFee - (promoApplied ? promoDiscount : 0)
+  const platformFee = Math.round(fare * 0.05 * totalSelectedSeats)
+  const subtotal = fare * totalSelectedSeats
+  const total = subtotal + platformFee - (promoApplied ? promoDiscount : 0)
   const distance = parseFloat(segmentDistance || '0')
 
   // Prepare seat map for CarSeatLayout
@@ -605,6 +605,7 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
         .fade-3 { animation: fadeUp .45s .19s ease both; }
         .fade-4 { animation: fadeUp .45s .26s ease both; }
         .fade-5 { animation: fadeUp .45s .33s ease both; }
+        .fade-6 { animation: fadeUp .45s .40s ease both; }
       `}</style>
 
       <div className="max-w-5xl mx-auto">
@@ -626,16 +627,15 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
           {/* Steps indicator */}
           <div className="hidden sm:flex items-center gap-2">
             {[
-              { key: 'review',  label: 'Review'  },
+              { key: 'review', label: 'Review' },
               { key: 'payment', label: 'Payment' },
             ].map((s, i) => (
               <div key={s.key} className="flex items-center gap-2">
                 {i > 0 && <ChevronRight size={12} className="text-gray-300" />}
-                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition ${
-                  step === s.key
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-400'
-                }`}>
+                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition ${step === s.key
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 text-gray-400'
+                  }`}>
                   <span className="w-4 h-4 rounded-full border-2 flex items-center justify-center text-[9px] font-black border-current">
                     {i + 1}
                   </span>
@@ -654,25 +654,27 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
             {step === 'review' ? (
               <>
                 <div className="fade-2">
-                  <TripSummary 
-                    trip={trip} 
+                  <TripSummary
+                    trip={trip}
                     fromName={fromName}
                     toName={toName}
-                    seatNumber={parseInt(seatNumber || '0')}
+                    seatNumbers={seatNumbers}
+                    totalSeats={totalSelectedSeats}
                     distanceKm={distance}
                   />
                 </div>
-                {/* Car Seat Layout - Showing selected seat */}
+                {/* Car Seat Layout - Showing selected seats */}
                 <div className="fade-3">
                   <SectionCard>
-                    <SectionHeader title="Your Seat" sub="Seat {seatNumber} selected" />
+                    <SectionHeader title="Your Seat" sub={`${totalSelectedSeats} seat${totalSelectedSeats > 1 ? 's' : ''} selected`} />
                     <div className="p-4">
                       <CarSeatLayout
                         totalSeats={trip.totalSeats}
                         seatMap={seatMapForLayout}
-                        selectedSeat={parseInt(seatNumber || '0')}
-                        setSelectedSeat={() => {}} // Disabled in checkout
+                        selectedSeats={seatNumbers}
+                        onSeatToggle={() => { }}
                         womenOnly={trip.womenOnly}
+                        disabled={true}
                       />
                     </div>
                   </SectionCard>
@@ -681,7 +683,22 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
                 <div className="fade-5"><TrustBadges /></div>
                 <div className="fade-6">
                   <button
-                    onClick={() => setStep('payment')}
+                    onClick={async () => {
+                      setError('')
+                      try {
+                        const res = await api.post('/payments/create-intent', {
+                          tripId,
+                          fromOrder: parseInt(fromOrder!),
+                          toOrder: parseInt(toOrder!),
+                          seatNumbers,
+                        })
+                        setClientSecret(res.data.data.clientSecret)
+                        setStripeAmount(res.data.data.amount)
+                        setStep('payment')
+                      } catch (err: any) {
+                        setError(err.response?.data?.message || 'Failed to initialize payment')
+                      }
+                    }}
                     className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl transition shadow-lg shadow-blue-200 flex items-center justify-center gap-2 text-[15px]">
                     Continue to Payment <ChevronRight size={16} />
                   </button>
@@ -690,25 +707,42 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
             ) : (
               <>
                 <div className="fade-2">
-                  <PaymentSection />
+                  {clientSecret ? (
+                    <Elements
+                      stripe={stripePromise}
+                      options={{
+                        clientSecret,
+                        appearance: {
+                          theme: 'stripe',
+                          variables: {
+                            colorPrimary: '#2563eb',
+                            borderRadius: '12px',
+                            fontFamily: 'DM Sans, sans-serif',
+                          },
+                        },
+                      }}
+                    >
+                      <StripePaymentSection
+                        total={stripeAmount}
+                        onSuccess={(paymentIntentId) => handleBook(paymentIntentId)}
+                        onError={(msg) => setError(msg)}
+                      />
+                    </Elements>
+                  ) : (
+                    <div className="flex items-center justify-center h-40">
+                      <Loader2 size={28} className="text-blue-500 animate-spin" />
+                    </div>
+                  )}
                 </div>
+
                 <div className="fade-3"><TrustBadges /></div>
-                <div className="fade-4">
-                  <button
-                    onClick={handleBook}
-                    disabled={booking}
-                    className="w-full py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold rounded-2xl transition shadow-lg shadow-blue-200 flex items-center justify-center gap-2.5 text-[15px]">
-                    {booking ? (
-                      <><Loader2 size={17} className="animate-spin" /> Processing...</>
-                    ) : (
-                      <><Lock size={15} /> Pay ₹{total} Securely</>
-                    )}
-                  </button>
-                  <p className="text-center text-xs text-gray-400 mt-2.5 flex items-center justify-center gap-1">
-                    <ShieldCheck size={11} className="text-green-500" />
-                    Protected by Stripe · 256-bit SSL encryption
-                  </p>
-                </div>
+
+                {error && (
+                  <div className="fade-4 bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+                    <AlertCircle size={16} className="text-red-500 mt-0.5 shrink-0" />
+                    <p className="text-sm text-red-600">{error}</p>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -716,8 +750,9 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
           {/* RIGHT — sticky summary */}
           <div className="space-y-4 lg:sticky lg:top-[80px] self-start">
             <div className="fade-2">
-              <PriceDetails 
+              <PriceDetails
                 fare={fare}
+                totalSeats={totalSelectedSeats}
                 platformFee={platformFee}
                 total={total}
                 promoApplied={promoApplied}
@@ -751,7 +786,9 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
                       <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
                       <span className="truncate">{toName}</span>
                     </div>
-                    <p className="text-[10px] text-center text-gray-400 mt-2">Seat {seatNumber}</p>
+                    <p className="text-[10px] text-center text-gray-400 mt-2">
+                      {totalSelectedSeats > 1 ? `${totalSelectedSeats} seats` : `Seat ${primarySeat}`}
+                    </p>
                     {trip?.vehicleInfo && (
                       <p className="text-[10px] text-center text-gray-500 mt-1 flex items-center justify-center gap-1">
                         <Car size={10} className="text-gray-400" /> {trip.vehicleInfo}
@@ -760,10 +797,21 @@ export default function CheckoutPage({ tripId }: { tripId: string }) {
                     {/* Mini car seat indicator */}
                     <div className="mt-3 flex justify-center">
                       <div className="flex items-center gap-1.5">
-                        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xs">
-                          {seatNumber}
+                        <div className="flex gap-1">
+                          {seatNumbers.slice(0, 3).map((seat) => (
+                            <div key={seat} className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xs">
+                              {seat}
+                            </div>
+                          ))}
+                          {totalSelectedSeats > 3 && (
+                            <div className="w-8 h-8 bg-gray-200 rounded-lg flex items-center justify-center text-gray-500 font-bold text-xs">
+                              +{totalSelectedSeats - 3}
+                            </div>
+                          )}
                         </div>
-                        <span className="text-[10px] text-gray-500">Your seat</span>
+                        <span className="text-[10px] text-gray-500 ml-1">
+                          {totalSelectedSeats} seat{totalSelectedSeats > 1 ? 's' : ''}
+                        </span>
                       </div>
                     </div>
                   </div>

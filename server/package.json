@@ -166,6 +166,7 @@
     "v8-compile-cache-lib": "^3.0.1",
     "validator": "^13.15.35",
     "vary": "^1.1.2",
+    "web-push": "^3.6.7",
     "webidl-conversions": "^7.0.0",
     "whatwg-url": "^14.2.0",
     "wrappy": "^1.0.2",

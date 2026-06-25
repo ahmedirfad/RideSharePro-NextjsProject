@@ -21,23 +21,23 @@ interface Conversation {
 }
 
 function timeAgo(dateStr: string) {
-  const diff  = Date.now() - new Date(dateStr).getTime()
-  const mins  = Math.floor(diff / 60000)
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
   const hours = Math.floor(mins / 60)
-  const days  = Math.floor(hours / 24)
-  if (mins < 1)   return 'now'
-  if (mins < 60)  return `${mins}m`
+  const days = Math.floor(hours / 24)
+  if (mins < 1) return 'now'
+  if (mins < 60) return `${mins}m`
   if (hours < 24) return `${hours}h`
   return `${days}d`
 }
 
 function fullTimeAgo(dateStr: string) {
-  const diff  = Date.now() - new Date(dateStr).getTime()
-  const mins  = Math.floor(diff / 60000)
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
   const hours = Math.floor(mins / 60)
-  const days  = Math.floor(hours / 24)
-  if (mins < 1)   return 'just now'
-  if (mins < 60)  return `${mins}m ago`
+  const days = Math.floor(hours / 24)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
   if (hours < 24) return `${hours}h ago`
   return `${days}d ago`
 }
@@ -85,6 +85,9 @@ function ChatWindow({
   )
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [smartReplies, setSmartReplies] = useState<string[]>([])
+  const [loadingReplies, setLoadingReplies] = useState(false)
+  const lastMessageRef = useRef<string>('')
   const endRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -97,6 +100,37 @@ function ChatWindow({
   useEffect(() => {
     inputRef.current?.focus()
   }, [conversation.bookingId])
+
+  useEffect(() => {
+    if (messages.length === 0) return
+
+    const lastMsg = messages[messages.length - 1]
+
+    if (lastMsg.sender.id === currentUserId) {
+      setSmartReplies([])
+      return
+    }
+
+    if (lastMsg.id === lastMessageRef.current) return
+    lastMessageRef.current = lastMsg.id
+
+    const fetchReplies = async () => {
+      setLoadingReplies(true)
+      try {
+        const res = await api.post('/quick-replies', {
+          message: lastMsg.text,
+          route: conversation.route
+        })
+        if (res.data.success) setSmartReplies(res.data.data.replies)
+      } catch {
+        setSmartReplies([])
+      } finally {
+        setLoadingReplies(false)
+      }
+    }
+
+    fetchReplies()
+  }, [messages, currentUserId, conversation.route])
 
   const handleInput = (v: string) => {
     setInput(v)
@@ -185,11 +219,10 @@ function ChatWindow({
                   )}
                   <div className={`group flex flex-col gap-1 max-w-[75%] sm:max-w-[65%] ${isMe ? 'items-end' : 'items-start'}`}>
                     <div
-                      className={`px-3.5 py-2.5 text-sm leading-relaxed shadow-sm transition-transform ${
-                        isMe
-                          ? 'bg-blue-600 text-white rounded-2xl rounded-tr-md'
-                          : 'bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-md'
-                      }`}
+                      className={`px-3.5 py-2.5 text-sm leading-relaxed shadow-sm transition-transform ${isMe
+                        ? 'bg-blue-600 text-white rounded-2xl rounded-tr-md'
+                        : 'bg-white text-gray-800 border border-gray-100 rounded-2xl rounded-tl-md'
+                        }`}
                     >
                       {msg.text}
                     </div>
@@ -227,6 +260,34 @@ function ChatWindow({
         <div ref={endRef} />
       </div>
 
+      {/* Quick Replies */}
+      {(smartReplies.length > 0 || loadingReplies) && (
+        <div className="px-4 py-2 border-t border-gray-100 bg-white shrink-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] text-gray-400 font-medium shrink-0">
+              Quick Replies:
+            </span>
+            {loadingReplies ? (
+              <Loader2 size={12} className="animate-spin text-gray-400" />
+            ) : (
+              smartReplies.map((reply, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    sendMessage(reply)
+                    setSmartReplies([])
+                  }}
+                  className="text-xs px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-full transition font-medium"
+                >
+                  {reply}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+
       {/* Input */}
       <div className="px-4 py-3.5 border-t border-gray-100 bg-white shrink-0">
         <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-2xl pl-4 pr-1.5 py-1.5 focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-300 transition">
@@ -244,11 +305,10 @@ function ChatWindow({
           <button
             onClick={handleSend}
             disabled={!input.trim()}
-            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all shrink-0 ${
-              input.trim()
-                ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-200'
-                : 'bg-gray-200 text-gray-400'
-            } ${sending ? 'scale-90' : 'scale-100'}`}
+            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all shrink-0 ${input.trim()
+              ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-200'
+              : 'bg-gray-200 text-gray-400'
+              } ${sending ? 'scale-90' : 'scale-100'}`}
           >
             <Send size={14} />
           </button>
@@ -270,9 +330,8 @@ function ConversationItem({
   return (
     <div
       onClick={onClick}
-      className={`relative flex items-start gap-3 px-4 py-3.5 cursor-pointer transition-colors ${
-        isActive ? 'bg-blue-50' : 'hover:bg-gray-50'
-      }`}
+      className={`relative flex items-start gap-3 px-4 py-3.5 cursor-pointer transition-colors ${isActive ? 'bg-blue-50' : 'hover:bg-gray-50'
+        }`}
     >
       {isActive && <span className="absolute left-0 top-2 bottom-2 w-[3px] bg-blue-600 rounded-full" />}
 
@@ -314,12 +373,12 @@ function ConversationItem({
 // ════════════════════════════════════════════════════════════════════════════
 export default function MessagesPage() {
   const searchParams = useSearchParams()
-  const { user }      = useAuthStore()
+  const { user } = useAuthStore()
   const currentUserId = user?.id || ''
 
-  const [conversations, setConversations]           = useState<Conversation[]>([])
-  const [loading, setLoading]                       = useState(true)
-  const [search, setSearch]                         = useState('')
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
 
   const loadConversations = useCallback(async () => {

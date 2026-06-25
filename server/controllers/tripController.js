@@ -3,6 +3,7 @@ const Trip = require("../models/Trip");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
 const { notify } = require("../utils/notify");
+const { verifyPayment } = require('../controllers/paymentController')
 
 // ✅ NEW: Import email functions
 const {
@@ -278,6 +279,9 @@ const searchTrips = async (req, res) => {
 };
 
 // ─── BOOK SEGMENT ─────────────────────────────────────────────────────────────
+// ─── BOOK SEGMENT (FIXED - Supports Multiple Seats) ──────────────────────────
+// ─── BOOK SEGMENT (FIXED - Supports Multiple Seats) ──────────────────────────
+// ─── BOOK SEGMENT (FIXED) ─────────────────────────────────────────────────────
 const bookSegment = async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -286,10 +290,39 @@ const bookSegment = async (req, res) => {
     try {
         const { id } = req.params;
         const passengerId = req.user.userId;
-        const { fromOrder: rawFrom, toOrder: rawTo } = req.body;
+        const { fromOrder: rawFrom, toOrder: rawTo, seatNumbers, paymentIntentId } = req.body;
 
         const fromOrder = parseInt(rawFrom);
         const toOrder = parseInt(rawTo);
+
+        // ✅ Support multiple seats
+        let seatsToBook = [];
+        if (seatNumbers && Array.isArray(seatNumbers) && seatNumbers.length > 0) {
+            seatsToBook = seatNumbers;
+        } else if (req.body.seatNumber) {
+            seatsToBook = [parseInt(req.body.seatNumber)];
+        } else {
+            seatsToBook = [1];
+        }
+
+        if (!paymentIntentId) {
+            await session.abortTransaction();
+            return res.status(400).json({ success: false, message: 'Payment required to book seats' });
+        }
+        try {
+            await verifyPayment(paymentIntentId, id, passengerId, seatsToBook);
+        } catch (err) {
+            await session.abortTransaction();
+            return res.status(400).json({ success: false, message: err.message });
+        }
+
+        if (seatsToBook.length > 6) {
+            await session.abortTransaction();
+            return res.status(400).json({
+                success: false,
+                message: "Maximum 6 seats allowed per booking"
+            });
+        }
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
             await session.abortTransaction();
@@ -333,18 +366,6 @@ const bookSegment = async (req, res) => {
             return res.status(400).json({ success: false, message: segmentCheck.message });
         }
 
-        const freeSeat = findFreeSeat(trip, fromOrder, toOrder);
-
-        if (!freeSeat) {
-            await session.abortTransaction();
-            return res.status(409).json({
-                success: false,
-                message: "No seats available on this segment",
-            });
-        }
-
-        const { fare, distanceKm } = calculateSegmentFare(trip, fromOrder, toOrder);
-
         const fromWp = trip.waypoints.find((w) => w.order === fromOrder);
         const toWp = trip.waypoints.find((w) => w.order === toOrder);
 
@@ -352,118 +373,170 @@ const bookSegment = async (req, res) => {
             await session.abortTransaction();
             return res.status(400).json({
                 success: false,
-                message: "Could not resolve boarding/alighting waypoints for the given orders",
+                message: "Could not resolve boarding/alighting waypoints",
             });
         }
 
-        const bookingId = new mongoose.Types.ObjectId();
+        // ✅ Check availability for all seats
+        const unavailableSeats = [];
+        for (const seatNum of seatsToBook) {
+            const seat = trip.seats.find(s => s.seatNumber === seatNum);
+            if (!seat) {
+                unavailableSeats.push(seatNum);
+                continue;
+            }
 
-        const updatedTrip = await Trip.findOneAndUpdate(
-            {
-                _id: id,
-                status: "upcoming",
-                seats: {
-                    $elemMatch: {
-                        seatNumber: freeSeat.seatNumber,
-                        bookings: {
-                            $not: {
-                                $elemMatch: {
-                                    status: "confirmed",
-                                    fromOrder: { $lt: toOrder },
-                                    toOrder: { $gt: fromOrder },
+            const hasConflict = seat.bookings.some(
+                (b) =>
+                    b.status === "confirmed" &&
+                    b.fromOrder < toOrder &&
+                    b.toOrder > fromOrder
+            );
+
+            if (hasConflict) {
+                unavailableSeats.push(seatNum);
+            }
+        }
+
+        if (unavailableSeats.length > 0) {
+            await session.abortTransaction();
+            return res.status(409).json({
+                success: false,
+                message: `Seats ${unavailableSeats.join(', ')} are already booked`,
+                unavailableSeats
+            });
+        }
+
+        // ✅ Book all seats
+        const bookingIds = [];
+        let totalFare = 0;
+        let totalDistance = 0;
+        let lastBooking = null;
+
+        for (const seatNum of seatsToBook) {
+            const bookingId = new mongoose.Types.ObjectId();
+            bookingIds.push(bookingId);
+
+            const { fare, distanceKm } = calculateSegmentFare(trip, fromOrder, toOrder);
+            totalFare += fare;
+            totalDistance += distanceKm;
+
+            // Update seat
+            await Trip.findOneAndUpdate(
+                {
+                    _id: id,
+                    status: "upcoming",
+                    seats: {
+                        $elemMatch: {
+                            seatNumber: seatNum,
+                            bookings: {
+                                $not: {
+                                    $elemMatch: {
+                                        status: "confirmed",
+                                        fromOrder: { $lt: toOrder },
+                                        toOrder: { $gt: fromOrder },
+                                    },
                                 },
                             },
                         },
                     },
                 },
-            },
-            {
-                $push: {
-                    "seats.$[seat].bookings": {
-                        bookingId,
-                        passengerId,
-                        fromOrder,
-                        toOrder,
-                        status: "confirmed",
+                {
+                    $push: {
+                        "seats.$[seat].bookings": {
+                            bookingId,
+                            passengerId,
+                            fromOrder,
+                            toOrder,
+                            status: "confirmed",
+                        },
                     },
                 },
-            },
-            {
-                arrayFilters: [{ "seat.seatNumber": freeSeat.seatNumber }],
-                returnDocument: "after",
-                session,
-            }
-        );
+                {
+                    arrayFilters: [{ "seat.seatNumber": seatNum }],
+                    returnDocument: "after",
+                }
+            );
 
-        if (!updatedTrip) {
-            await session.abortTransaction();
-            return res.status(409).json({
-                success: false,
-                message: "Seat was just taken — please try again",
+            const booking = new Booking({
+                _id: bookingId,
+                tripId: trip._id,
+                passengerId,
+                seatNumber: seatNum,
+                fromOrder,
+                toOrder,
+                fromName: fromWp.name,
+                toName: toWp.name,
+                distanceKm,
+                fareCharged: fare,
+                seatsBooked: 1,
+                status: "confirmed",
+                paymentStatus: "paid",           // ← already paid via Stripe
+                stripePaymentIntentId: paymentIntentId,  // ← add this
+                stripePlatformFee: Math.round(fare * 0.05),
             });
+
+            await booking.save({ session });
+            lastBooking = booking;
         }
 
-        const booking = new Booking({
-            _id: bookingId,
-            tripId: trip._id,
-            passengerId,
-            seatNumber: freeSeat.seatNumber,
-            fromOrder,
-            toOrder,
-            fromName: fromWp.name,
-            toName: toWp.name,
-            distanceKm,
-            fareCharged: fare,
-            seatsBooked: 1,
-            status: "confirmed",
-        });
-
-        await booking.save({ session });
         await session.commitTransaction();
         committed = true;
+        console.log('io available:', !!req.io)
+
 
         // ── Get user details for emails ────────────────────
         const passenger = await User.findById(passengerId).select("name email");
         const driver = await User.findById(trip.driverId).select("name email");
 
+        await notify(req.io, {
+            userId: trip.driverId,
+            type: 'booking_confirmed',
+            title: `New Booking! 🚗`,
+            body: `${passenger?.name || 'Someone'} booked ${seatsToBook.length} seat${seatsToBook.length > 1 ? 's' : ''} on your trip ${trip.from} → ${trip.to}`,
+            link: `/trip/${trip._id}`,
+            meta: { bookingIds, tripId: trip._id, seatNumbers: seatsToBook }
+        })
+
+        // ─── Notify passenger ─────────────────────────────────────
+        await notify(req.io, {
+            userId: passengerId,
+            type: 'booking_confirmed',
+            title: 'Booking Confirmed! ✅',
+            body: `Your ${seatsToBook.length > 1 ? 'seats are' : 'seat is'} confirmed on trip ${trip.from} → ${trip.to}`,
+            link: `/trips`,
+            meta: { bookingIds, tripId: trip._id, seatNumbers: seatsToBook }
+        })
+
         // ─── SEND EMAILS ────────────────────────────────────
         try {
-            await sendBookingConfirmationEmail(passenger, booking, trip);
-            await sendNewBookingAlertEmail(driver, passenger, booking, trip);
+            await sendBookingConfirmationEmail(passenger, lastBooking, trip);
+            await sendNewBookingAlertEmail(driver, passenger, lastBooking, trip);
         } catch (emailError) {
             console.error('❌ Failed to send booking emails:', emailError);
         }
 
-        // ── Response ─────────────────────────────────────────
-        try {
-            return res.status(201).json({
-                success: true,
-                message: `Seat ${freeSeat.seatNumber} booked: ${fromWp.name} → ${toWp.name}`,
-                data: {
-                    bookingId: booking._id,
-                    tripId: trip._id,
-                    seatNumber: freeSeat.seatNumber,
-                    from: fromWp.name,
-                    to: toWp.name,
-                    distanceKm,
-                    fareCharged: fare,
-                    status: "confirmed",
-                },
-            });
-        } catch (responseError) {
-            console.error("Book segment: error building success response (booking still saved):", responseError);
-            return res.status(201).json({
-                success: true,
-                message: "Booking confirmed",
-                data: { bookingId: booking._id, tripId: trip._id },
-            });
-        }
+        return res.status(201).json({
+            success: true,
+            message: `${seatsToBook.length} seat${seatsToBook.length > 1 ? 's' : ''} booked`,
+            data: {
+                bookingIds,
+                tripId: trip._id,
+                seatNumbers: seatsToBook,
+                totalFare,
+                totalDistance,
+                from: fromWp.name,
+                to: toWp.name,
+                status: "confirmed",
+            },
+        });
+
     } catch (error) {
         if (!committed) {
             try {
                 await session.abortTransaction();
             } catch (abortError) {
-                console.error("Book segment: abortTransaction also failed:", abortError.message);
+                console.error("Book segment abort failed:", abortError.message);
             }
         }
         console.error("Book segment error:", error);
@@ -551,40 +624,44 @@ const getMyTrips = async (req, res) => {
             waypoints: trip.waypoints,
         }));
 
-        const formattedGuest = bookings.map((booking) => {
-            const fromName = booking.fromName || "";
-            const toName = booking.toName || "";
+        const formattedGuest = bookings
+            .filter((booking) => booking.tripId !== null)
+            .map((booking) => {
+                const fromName = booking.fromName || "";
+                const toName = booking.toName || "";
 
-            return {
-                id: booking.tripId?._id,
-                tripId: booking.tripId?._id,
-                bookingId: booking._id,
-                route: `${fromName} → ${toName}`,
-                fullRoute: `${booking.tripId?.from || ""} → ${booking.tripId?.to || ""}`,
-                role: "GUEST",
-                date: new Date(booking.tripId?.departureDate || Date.now()).toLocaleDateString("en-IN", {
-                    day: "numeric", month: "short", year: "numeric",
-                }),
-                time: booking.tripId?.departureTime || "",
-                status: getStatus(booking.tripId?.status, booking.tripId?.departureDate),
-                fromName: fromName,
-                toName: toName,
-                fromOrder: booking.fromOrder,
-                toOrder: booking.toOrder,
-                seatNumber: booking.seatNumber,
-                distanceKm: booking.distanceKm,
-                seats: { booked: 1, total: booking.tripId?.totalSeats || 0 },
-                amount: `₹${booking.fareCharged}`,
-                vehicleInfo: booking.tripId?.vehicleInfo || "",
-                driver: booking.tripId?.driverId
-                    ? {
-                        name: booking.tripId.driverId.name,
-                        avatar: (booking.tripId.driverId.name || "D").charAt(0).toUpperCase(),
-                        rating: booking.tripId.driverId.rating || 0,
-                    }
-                    : null,
-            };
-        });
+                return {
+                    id: booking.tripId?._id,
+                    tripId: booking.tripId?._id,
+                    bookingId: booking._id,
+                    route: `${fromName} → ${toName}`,
+                    fullRoute: `${booking.tripId?.from || ""} → ${booking.tripId?.to || ""}`,
+                    role: "GUEST",
+                    date: new Date(booking.tripId?.departureDate || Date.now()).toLocaleDateString("en-IN", {
+                        day: "numeric", month: "short", year: "numeric",
+                    }),
+                    time: booking.tripId?.departureTime || "",
+                    status: booking.status === 'cancelled'
+                        ? 'CANCELLED'
+                        : getStatus(booking.tripId?.status, booking.tripId?.departureDate),
+                    fromName: fromName,
+                    toName: toName,
+                    fromOrder: booking.fromOrder,
+                    toOrder: booking.toOrder,
+                    seatNumber: booking.seatNumber,
+                    distanceKm: booking.distanceKm,
+                    seats: { booked: 1, total: booking.tripId?.totalSeats || 0 },
+                    amount: `₹${booking.fareCharged}`,
+                    vehicleInfo: booking.tripId?.vehicleInfo || "",
+                    driver: booking.tripId?.driverId
+                        ? {
+                            name: booking.tripId.driverId.name,
+                            avatar: (booking.tripId.driverId.name || "D").charAt(0).toUpperCase(),
+                            rating: booking.tripId.driverId.rating || 0,
+                        }
+                        : null,
+                };
+            });
 
         return res.json({
             success: true,

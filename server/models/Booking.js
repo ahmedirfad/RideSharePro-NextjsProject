@@ -39,7 +39,7 @@ const BookingSchema = new mongoose.Schema(
       default: "confirmed",
     },
 
-    // ✅ NEW — Payment & Escrow tracking
+    // ── Payment & Escrow tracking ─────────────────────────────────────────
     paymentStatus: {
       type: String,
       enum: ["pending", "paid", "failed", "refunded", "partially_refunded"],
@@ -52,25 +52,50 @@ const BookingSchema = new mongoose.Schema(
     },
     escrowReleasedAt: { type: Date, default: null },
 
-    // ✅ NEW — Refund tracking
+    // ── Stripe Payment ─────────────────────────────────────────────────────────
+    stripePaymentIntentId: { type: String, default: null },
+    stripePlatformFee: { type: Number, default: 0 },
+
+    // ── Refund tracking ──────────────────────────────────────────────────────
     refundAmount: { type: Number, default: 0 },
     refundReason: { type: String, default: "" },
     refundedAt: { type: Date, default: null },
     refundedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    
+    // ✅ NEW: Detailed refund fields for UI display
+    platformFeeDeducted: { type: Number, default: 0 },
+    refundStatus: {
+      type: String,
+      enum: ['pending', 'processed', 'failed'],
+      default: 'pending'
+    },
+    cancelledBy: { 
+      type: String, 
+      enum: ['passenger', 'driver', 'admin'],
+      default: 'passenger'
+    },
+    originalFare: { type: Number, default: 0 }, // Store original fare before refund
   },
   { timestamps: true }
 );
 
-// FIXED: Sync totalAmount with fareCharged on save - NO next()
+// ✅ FIXED: Sync totalAmount with fareCharged on save
 BookingSchema.pre("save", function () {
   if (this.fareCharged != null) {
     this.totalAmount = this.fareCharged;
   }
+  // Store original fare before refund
+  if (this.isNew && this.fareCharged) {
+    this.originalFare = this.fareCharged;
+  }
 });
 
+// ─── Indexes ──────────────────────────────────────────────────────────────────
 BookingSchema.index({ tripId: 1, passengerId: 1 });
 BookingSchema.index({ passengerId: 1, status: 1 });
 BookingSchema.index({ escrowStatus: 1 });
 BookingSchema.index({ paymentStatus: 1 });
+BookingSchema.index({ refundStatus: 1, refundedAt: -1 }); // For refund queries
+BookingSchema.index({ passengerId: 1, refundStatus: 1 }); // For user refunds
 
 module.exports = mongoose.model("Booking", BookingSchema);

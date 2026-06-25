@@ -162,7 +162,7 @@ const getTripBookings = async (req, res) => {
     const userId = req.user.userId;
 
     const trip = await Trip.findById(tripId);
-    
+
     if (!trip) {
       return res.status(404).json({ message: "Trip not found" });
     }
@@ -190,12 +190,15 @@ const cancelBooking = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.userId;
 
-    const booking = await Booking.findById(id).populate("tripId").populate("passengerId", "name email");
+    const booking = await Booking.findById(id)
+      .populate("tripId")
+      .populate("passengerId", "name email");
 
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
 
+    // ✅ Only passenger can cancel
     if (booking.passengerId._id.toString() !== userId) {
       return res.status(403).json({ message: "Unauthorized" });
     }
@@ -204,51 +207,106 @@ const cancelBooking = async (req, res) => {
       return res.status(400).json({ message: "Booking already cancelled" });
     }
 
-    const trip = await Trip.findById(booking.tripId).populate("driverId", "name email");
+    const trip = await Trip.findById(booking.tripId);
     const tripDate = new Date(trip.departureDate);
     const now = new Date();
     const hoursUntilDeparture = (tripDate - now) / (1000 * 60 * 60);
 
+    // ✅ Check 24-hour rule
     if (hoursUntilDeparture < 24) {
-      return res.status(400).json({ message: "Cannot cancel within 24 hours of departure" });
+      return res.status(400).json({
+        message: "Cannot cancel within 24 hours of departure"
+      });
     }
 
-    const passenger = await User.findById(userId).select("name email");
-    const refundAmount = booking.totalAmount || 0;
+    // ─── Calculate refund ─────────────────────────────────────
+    const fare = booking.fareCharged || booking.totalAmount || 0;
+    const platformFee = Math.round(fare * 0.2); // 20% platform fee
+    const refundAmount = fare - platformFee; // 80% refund
 
+    // ─── Update booking with refund details ──────────────────
     booking.status = "cancelled";
+    booking.refundAmount = refundAmount;
+    booking.platformFeeDeducted = platformFee;
+    booking.refundedAt = new Date();
+    booking.refundStatus = 'processed';
+    booking.cancelledBy = 'passenger';
     await booking.save();
 
-    trip.seatsAvailable += booking.seatsBooked;
-    await trip.save();
+    // ─── Release the seat ────────────────────────────────────
+    const seatToFree = booking.seatNumber;
 
-    // ─── SOCKET NOTIFICATIONS ──────────────────────────────
+    await Trip.findOneAndUpdate(
+      {
+        _id: trip._id,
+        "seats.seatNumber": seatToFree,
+      },
+      {
+        $pull: {
+          "seats.$.bookings": {
+            bookingId: booking._id,
+          },
+        },
+        $inc: { seatsAvailable: 1 },
+      }
+    );
+
+    // ─── Get user details for notifications ──────────────────
+    const passenger = await User.findById(userId).select("name email");
+    const driver = await User.findById(trip.driverId).select("name email");
+
+    // ─── SOCKET NOTIFICATIONS ────────────────────────────────
     await notify(req.io, {
       userId: trip.driverId,
-      type: "booking_confirmed",
+      type: "booking_cancelled",
       title: "❌ Booking Cancelled",
-      body: `${passenger?.name || "Someone"} cancelled their booking on ${trip.from} → ${trip.to}`,
+      body: `${passenger?.name || "Someone"} cancelled their booking. Seat ${seatToFree} is now available.`,
       link: `/trip/${trip._id}`,
-      meta: { bookingId: booking._id, tripId: trip._id }
+      meta: {
+        bookingId: booking._id,
+        tripId: trip._id,
+        seatNumber: seatToFree,
+        refundAmount,
+        platformFee
+      }
     });
 
     await notify(req.io, {
       userId: userId,
-      type: "booking_confirmed",
-      title: "Booking Cancelled ✅",
-      body: `You have cancelled your booking on ${trip.from} → ${trip.to}`,
+      type: "booking_cancelled",
+      title: "✅ Booking Cancelled - Refund Initiated",
+      body: `Your booking has been cancelled. ₹${refundAmount} will be refunded (₹${platformFee} platform fee deducted).`,
       link: `/trips`,
-      meta: { bookingId: booking._id, tripId: trip._id }
+      meta: {
+        bookingId: booking._id,
+        tripId: trip._id,
+        refundAmount,
+        platformFee
+      }
     });
 
-    // ─── EMAIL NOTIFICATIONS ────────────────────────────────
-    // ✅ FIXED: Pass user objects directly
-    await sendBookingCancelledEmail(trip.driverId, booking, trip, passenger?.name || 'Passenger', refundAmount);
-    await sendBookingCancelledEmail(passenger, booking, trip, 'You', refundAmount);
+    // ─── Broadcast to all users ──────────────────────────────
+    req.io.to(`trip:${trip._id}`).emit("seat_availability_updated", {
+      tripId: trip._id,
+      seatNumber: seatToFree,
+      seatsAvailable: trip.seatsAvailable + 1,
+      message: `Seat ${seatToFree} is now available`
+    });
 
     res.json({
       success: true,
       message: "Booking cancelled successfully",
+      data: {
+        bookingId: booking._id,
+        tripId: trip._id,
+        seatNumber: seatToFree,
+        refundAmount,
+        platformFee,
+        refundedAt: booking.refundedAt,
+        from: trip.from,
+        to: trip.to,
+        departureDate: trip.departureDate
+      }
     });
   } catch (error) {
     console.error("Cancel booking error:", error);

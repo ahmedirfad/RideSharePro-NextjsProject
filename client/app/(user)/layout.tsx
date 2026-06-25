@@ -12,20 +12,21 @@ import {
 import { useAuthStore } from '@/store/authStore'
 import { useNotifications } from '@/hooks/useNotifications'
 import { useSocket } from '@/hooks/useSocket'
+import { usePushNotifications } from '@/hooks/usePushNotifications'
 import api from '@/lib/api'
 
 const navItems = [
-  { icon: LayoutDashboard, label: 'Dashboard',   href: '/dashboard' },
-  { icon: Car,             label: 'Host a Ride',  href: '/host' },
-  { icon: Calendar,        label: 'My Trips',     href: '/trips' },
-  { icon: Search,          label: 'Find a Ride',  href: '/search' },
-  { icon: Wallet,          label: 'Earnings',     href: '/earnings' },
+  { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
+  { icon: Car, label: 'Host a Ride', href: '/host' },
+  { icon: Calendar, label: 'My Trips', href: '/trips' },
+  { icon: Search, label: 'Find a Ride', href: '/search' },
+  { icon: Wallet, label: 'Earnings', href: '/earnings' },
 ]
 
 const userMenuItems = [
-  { icon: User,       label: 'Profile',   href: '/profile' },
-  { icon: Settings,   label: 'Settings',  href: '/settings' },
-  { icon: HelpCircle, label: 'Help',      href: '/help' },
+  { icon: User, label: 'Profile', href: '/profile' },
+  { icon: Settings, label: 'Settings', href: '/settings' },
+  { icon: HelpCircle, label: 'Help', href: '/help' },
 ]
 
 function timeAgo(dateStr: string) {
@@ -59,6 +60,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
   // ─── Socket & Notifications ────────────────────────────────────────────────
   const socket = useSocket()
   const { notifications, unreadCount: notifUnread, markRead, markAllRead } = useNotifications()
+  usePushNotifications()
 
   // ─── Fetch message unread count ─────────────────────────────────────────────
   useEffect(() => {
@@ -95,7 +97,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
             setMsgUnread(res.data.data.totalUnread || 0)
           }
         })
-        .catch(() => {})
+        .catch(() => { })
     }
 
     socket.on('new_notification', handleNewNotification)
@@ -299,16 +301,15 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                           onClick={() => { if (!n.read) markRead(n.id); setNotifOpen(false) }}
                           className={`flex items-start gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition ${!n.read ? 'bg-blue-50/40' : ''}`}
                         >
-                          <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs ${
-                            n.type === 'booking_confirmed' ? 'bg-green-100 text-green-600' :
-                            n.type === 'new_message'       ? 'bg-blue-100 text-blue-600' :
-                            n.type === 'dispute_filed'     ? 'bg-red-100 text-red-600' :
-                            n.type === 'trip_update'       ? 'bg-amber-100 text-amber-600' :
-                            'bg-gray-100 text-gray-500'
-                          }`}>
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs ${n.type === 'booking_confirmed' ? 'bg-green-100 text-green-600' :
+                              n.type === 'new_message' ? 'bg-blue-100 text-blue-600' :
+                                n.type === 'dispute_filed' ? 'bg-red-100 text-red-600' :
+                                  n.type === 'trip_update' ? 'bg-amber-100 text-amber-600' :
+                                    'bg-gray-100 text-gray-500'
+                            }`}>
                             {n.type === 'booking_confirmed' ? '✓' :
-                             n.type === 'new_message'       ? '💬' :
-                             n.type === 'dispute_filed'     ? '⚠' : '🔔'}
+                              n.type === 'new_message' ? '💬' :
+                                n.type === 'dispute_filed' ? '⚠' : '🔔'}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-semibold text-gray-800">{n.title}</p>
@@ -405,9 +406,8 @@ export default function UserLayout({ children }: { children: ReactNode }) {
               const isActive = pathname === item.href
               return (
                 <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition ${
-                    isActive ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-gray-600 hover:bg-gray-50'
-                  }`}>
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition ${isActive ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-gray-600 hover:bg-gray-50'
+                    }`}>
                   <item.icon size={16} />
                   {item.label}
                 </Link>

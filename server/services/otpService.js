@@ -1,3 +1,4 @@
+// server/services/otpService.js
 const redis = require("../config/redis");
 
 const generateOTP = () => {
@@ -6,7 +7,9 @@ const generateOTP = () => {
 
 const storeOTP = async (email, otp) => {
   const key = `otp:${email}`;
-  await redis.setEx(key, 300, otp);
+  // ✅ Works with ioredis
+  await redis.setex(key, 300, otp);
+  // OR use: await redis.set(key, otp, 'EX', 300);
   return true;
 };
 

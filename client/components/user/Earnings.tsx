@@ -6,7 +6,8 @@ import {
   TrendingUp, Car, Users, Star, Download, Calendar,
   ChevronRight, ArrowUpRight, ArrowDownRight, Wallet,
   CreditCard, Shield, Clock, CheckCircle, XCircle,
-  Loader2, AlertCircle, BarChart2, Filter,
+  Loader2, AlertCircle, BarChart2, Filter, RefreshCw,
+  MapPin
 } from 'lucide-react'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/authStore'
@@ -39,6 +40,21 @@ interface MonthSummary {
   spent: number
 }
 
+interface RefundEntry {
+  id: string
+  tripId: string
+  from: string
+  to: string
+  departureDate: string
+  departureTime: string
+  seatNumber: number
+  fare: number
+  refundAmount: number
+  platformFee: number
+  refundedAt: string
+  refundStatus: string
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function parseAmount(str: string): number {
   return parseInt((str || '₹0').replace(/[₹,]/g, '')) || 0
@@ -58,6 +74,16 @@ function getMonthKey(dateStr: string): string {
 
 function toRawDate(dateStr: string): Date {
   try { return new Date(dateStr) } catch { return new Date() }
+}
+
+function formatDate(dateStr: string) {
+  if (!dateStr || dateStr === 'Unknown') return 'Unknown'
+  const date = new Date(dateStr)
+  return date.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  })
 }
 
 // ─── Mini bar chart ───────────────────────────────────────────────────────────
@@ -173,6 +199,149 @@ function TxRow({ entry }: { entry: EarningEntry }) {
   )
 }
 
+// ─── Refund Row ──────────────────────────────────────────────────────────────
+function RefundRow({ refund }: { refund: RefundEntry }) {
+  return (
+    <div className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition group">
+      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-green-100">
+        <Wallet size={15} className="text-green-600" />
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <MapPin size={12} className="text-green-500 shrink-0" />
+          <p className="text-sm font-semibold text-gray-900 truncate">
+            {refund.from} <span className="text-gray-400">→</span> {refund.to}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+          <span className="text-[10px] text-gray-400 flex items-center gap-1">
+            <Calendar size={9} /> {formatDate(refund.departureDate)}
+          </span>
+          <span className="text-[10px] text-gray-400">Seat {refund.seatNumber}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+            refund.refundStatus === 'processed'
+              ? 'bg-green-100 text-green-700'
+              : 'bg-yellow-100 text-yellow-700'
+          }`}>
+            {refund.refundStatus}
+          </span>
+        </div>
+      </div>
+
+      <div className="text-right shrink-0">
+        <p className="text-sm font-black text-green-600">+{fmtINR(refund.refundAmount)}</p>
+        <p className="text-[10px] text-gray-400 mt-0.5">Fee: {fmtINR(refund.platformFee)}</p>
+      </div>
+
+      <span className="text-[9px] text-gray-400 whitespace-nowrap">
+        {formatDate(refund.refundedAt)}
+      </span>
+    </div>
+  )
+}
+
+// ─── Refund List Component ───────────────────────────────────────────────────
+function RefundList() {
+  const { isAuthenticated } = useAuthStore()
+  const [refunds, setRefunds] = useState<RefundEntry[]>([])
+  const [totalRefunded, setTotalRefunded] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const fetchRefunds = async () => {
+    if (!isAuthenticated) {
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+    setError('')
+
+    try {
+      const response = await api.get('/refunds/my')
+      if (response.data.success) {
+        setRefunds(response.data.data.refunds)
+        setTotalRefunded(response.data.data.totalRefunded)
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Failed to load refunds')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchRefunds()
+  }, [isAuthenticated])
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 size={32} className="text-blue-500 animate-spin" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+        <AlertCircle size={32} className="text-red-500 mx-auto mb-2" />
+        <p className="text-red-600 text-sm">{error}</p>
+        <button onClick={fetchRefunds} className="mt-2 text-red-600 text-sm hover:underline flex items-center gap-1 mx-auto">
+          <RefreshCw size={12} /> Try again
+        </button>
+      </div>
+    )
+  }
+
+  if (refunds.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Wallet size={24} className="text-gray-400" />
+        </div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">No Refunds Yet</h3>
+        <p className="text-sm text-gray-500 max-w-sm mx-auto">
+          You haven't received any refunds. Refunds are processed when you cancel a booking.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Summary Card */}
+      <div className="bg-gradient-to-r from-green-600 to-green-700 rounded-2xl p-6 text-white">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-green-200 text-sm font-medium">Total Refunds</p>
+            <p className="text-3xl font-bold">{fmtINR(totalRefunded)}</p>
+            <p className="text-green-200 text-xs mt-1">{refunds.length} refund{refunds.length > 1 ? 's' : ''} processed</p>
+          </div>
+          <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center">
+            <Wallet size={28} className="text-white" />
+          </div>
+        </div>
+      </div>
+
+      {/* Refund List */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="font-bold text-gray-900 text-sm">Refund History</h3>
+          <span className="text-xs text-gray-400">{refunds.length} items</span>
+        </div>
+
+        <div className="divide-y divide-gray-50">
+          {refunds.map((refund) => (
+            <RefundRow key={refund.id} refund={refund} />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Component ────────────────────────────────────────────────────────────
 export default function Earnings() {
   const { isAuthenticated } = useAuthStore()
@@ -185,6 +354,7 @@ export default function Earnings() {
   const [filterType, setFilterType] = useState<'all' | 'HOST' | 'GUEST'>('all')
   const [filterMonth, setFilterMonth] = useState<string>('all')
   const [newPayoutAlert, setNewPayoutAlert] = useState(false)
+  const [activeTab, setActiveTab] = useState<'earnings' | 'refunds'>('earnings')
 
   // ─── Fetch ──────────────────────────────────────────────────────────────────
   const fetchEarnings = async () => {
@@ -237,19 +407,16 @@ export default function Earnings() {
     if (!socket) return
 
     const handleNewBooking = (data: any) => {
-      // Refresh earnings when a booking is confirmed (new earning)
       fetchEarnings()
     }
 
     const handlePaymentReleased = (data: any) => {
-      // Show alert when escrow is released (new payout)
       setNewPayoutAlert(true)
       fetchEarnings()
       setTimeout(() => setNewPayoutAlert(false), 5000)
     }
 
     const handleTripCompleted = (data: any) => {
-      // Refresh when trip is completed (earning finalized)
       fetchEarnings()
     }
 
@@ -378,264 +545,296 @@ export default function Earnings() {
         </div>
       </div>
 
-      {/* ── Hero earnings card ── */}
-      <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-3xl p-7 text-white relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10 pointer-events-none" style={{
-          backgroundImage: 'radial-gradient(white 1px, transparent 1px)',
-          backgroundSize: '22px 22px',
-        }} />
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/4 pointer-events-none" />
+      {/* ── Tabs ── */}
+      <div className="flex gap-1 border-b border-gray-200">
+        <button
+          onClick={() => setActiveTab('earnings')}
+          className={`px-4 py-2 text-sm font-medium rounded-t-lg transition ${
+            activeTab === 'earnings'
+              ? 'text-blue-600 border-b-2 border-blue-600'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Wallet size={14} className="inline mr-1.5" />
+          Earnings
+        </button>
+        <button
+          onClick={() => setActiveTab('refunds')}
+          className={`px-4 py-2 text-sm font-medium rounded-t-lg transition ${
+            activeTab === 'refunds'
+              ? 'text-blue-600 border-b-2 border-blue-600'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <RefreshCw size={14} className="inline mr-1.5" />
+          Refunds
+        </button>
+      </div>
 
-        <div className="relative z-10 flex flex-wrap gap-8 items-end justify-between">
-          <div>
-            <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-1">Total Net Earnings (Host)</p>
-            <p className="text-5xl font-black tracking-tight leading-none">{fmtINR(totalNetEarned)}</p>
-            <p className="text-blue-200 text-sm mt-2">
-              Gross {fmtINR(totalGross)} − platform fees {fmtINR(totalFees)}
-            </p>
-          </div>
+      {activeTab === 'refunds' ? (
+        <RefundList />
+      ) : (
+        <>
+          {/* ── Hero earnings card ── */}
+          <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-3xl p-7 text-white relative overflow-hidden">
+            <div className="absolute inset-0 opacity-10 pointer-events-none" style={{
+              backgroundImage: 'radial-gradient(white 1px, transparent 1px)',
+              backgroundSize: '22px 22px',
+            }} />
+            <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/4 pointer-events-none" />
 
-          <div className="flex flex-col gap-2">
-            <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl border ${
-              netBalance >= 0
-                ? 'bg-emerald-500/20 border-emerald-400/30'
-                : 'bg-red-500/20 border-red-400/30'
-            }`}>
-              <Wallet size={14} className={netBalance >= 0 ? 'text-emerald-300' : 'text-red-300'} />
+            <div className="relative z-10 flex flex-wrap gap-8 items-end justify-between">
               <div>
-                <p className="text-[10px] text-white/70 uppercase tracking-wider font-bold">Net Balance</p>
-                <p className={`text-base font-black ${netBalance >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
-                  {netBalance >= 0 ? '+' : ''}{fmtINR(netBalance)}
+                <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mb-1">Total Net Earnings (Host)</p>
+                <p className="text-5xl font-black tracking-tight leading-none">{fmtINR(totalNetEarned)}</p>
+                <p className="text-blue-200 text-sm mt-2">
+                  Gross {fmtINR(totalGross)} − platform fees {fmtINR(totalFees)}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl border ${
+                  netBalance >= 0
+                    ? 'bg-emerald-500/20 border-emerald-400/30'
+                    : 'bg-red-500/20 border-red-400/30'
+                }`}>
+                  <Wallet size={14} className={netBalance >= 0 ? 'text-emerald-300' : 'text-red-300'} />
+                  <div>
+                    <p className="text-[10px] text-white/70 uppercase tracking-wider font-bold">Net Balance</p>
+                    <p className={`text-base font-black ${netBalance >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                      {netBalance >= 0 ? '+' : ''}{fmtINR(netBalance)}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-[10px] text-blue-300 text-right">
+                  Earned {fmtINR(totalNetEarned)} − Spent {fmtINR(totalSpent)}
                 </p>
               </div>
             </div>
-            <p className="text-[10px] text-blue-300 text-right">
-              Earned {fmtINR(totalNetEarned)} − Spent {fmtINR(totalSpent)}
-            </p>
-          </div>
-        </div>
 
-        <div className="relative z-10 mt-6 grid grid-cols-3 gap-4 border-t border-white/10 pt-5">
-          {[
-            { label: 'AVG PER TRIP', value: fmtINR(avgPerTrip), icon: TrendingUp },
-            { label: 'TRIPS HOSTED', value: String(totalTripsHosted), icon: Car },
-            { label: 'HIGHEST EARNING', value: topRoute ? fmtINR(topRoute[1]) : '—', icon: Star },
-          ].map(({ label, value, icon: Icon }) => (
-            <div key={label} className="text-center">
-              <div className="w-8 h-8 bg-white/10 rounded-xl flex items-center justify-center mx-auto mb-2">
-                <Icon size={14} className="text-white" />
-              </div>
-              <p className="text-xs text-blue-200 uppercase tracking-widest font-bold">{label}</p>
-              <p className="text-xl font-black text-white mt-0.5">{value}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Top stats grid ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          label="Host Earnings (net)" value={fmtINR(totalNetEarned)}
-          sub={`${totalTripsHosted} trips hosted`}
-          icon={Car} accent="bg-blue-100 text-blue-600"
-          trend={bestMonth ? `Best: ${fmtINR(bestMonth.netEarned)} in ${bestMonth.month}` : undefined}
-          trendUp
-        />
-        <StatCard
-          label="Platform Fees Paid" value={fmtINR(totalFees)}
-          sub="5% of gross earnings"
-          icon={Shield} accent="bg-gray-100 text-gray-500"
-        />
-        <StatCard
-          label="Passenger Spend" value={fmtINR(totalSpent)}
-          sub={`${guestEntries.length} trips taken`}
-          icon={Users} accent="bg-purple-100 text-purple-600"
-          trend={totalSpent > 0 ? `Avg ${fmtINR(Math.round(totalSpent / Math.max(guestEntries.length, 1)))} per trip` : undefined}
-        />
-        <StatCard
-          label="Net Balance" value={fmtINR(netBalance)}
-          sub="Earned minus spent"
-          icon={Wallet} accent={netBalance >= 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-500'}
-          trend={netBalance >= 0 ? 'In profit' : 'Spending > Earning'}
-          trendUp={netBalance >= 0}
-        />
-      </div>
-
-      {/* ── Two column: Chart + Recent payouts ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
-
-        {/* Weekly earnings chart */}
-        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <BarChart2 size={16} className="text-blue-600" />
-              <h3 className="font-bold text-gray-900 text-sm">Monthly Earnings</h3>
-            </div>
-            <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
-              {(['week','month','year'] as const).map(v => (
-                <button key={v} onClick={() => setView(v)}
-                  className={`text-[11px] font-bold px-3 py-1 rounded-lg transition capitalize ${
-                    view === v ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'
-                  }`}>
-                  {v === 'week' ? 'Week' : v === 'month' ? 'Month' : 'Year'}
-                </button>
+            <div className="relative z-10 mt-6 grid grid-cols-3 gap-4 border-t border-white/10 pt-5">
+              {[
+                { label: 'AVG PER TRIP', value: fmtINR(avgPerTrip), icon: TrendingUp },
+                { label: 'TRIPS HOSTED', value: String(totalTripsHosted), icon: Car },
+                { label: 'HIGHEST EARNING', value: topRoute ? fmtINR(topRoute[1]) : '—', icon: Star },
+              ].map(({ label, value, icon: Icon }) => (
+                <div key={label} className="text-center">
+                  <div className="w-8 h-8 bg-white/10 rounded-xl flex items-center justify-center mx-auto mb-2">
+                    <Icon size={14} className="text-white" />
+                  </div>
+                  <p className="text-xs text-blue-200 uppercase tracking-widest font-bold">{label}</p>
+                  <p className="text-xl font-black text-white mt-0.5">{value}</p>
+                </div>
               ))}
             </div>
           </div>
-          <div className="p-5">
-            {chartData.length > 0 ? (
-              <>
-                <BarChart data={chartData} />
-                <div className="mt-5 space-y-2">
-                  {monthlySummaries.slice(0, 4).map(s => (
-                    <div key={s.month} className="flex items-center gap-3 text-sm">
-                      <div className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                      <span className="font-medium text-gray-700 w-24 shrink-0">{s.month}</span>
-                      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-500 rounded-full"
-                          style={{ width: `${Math.min((s.netEarned / (monthlySummaries[0]?.netEarned || 1)) * 100, 100)}%` }} />
-                      </div>
-                      <span className="font-bold text-gray-900 w-20 text-right">{fmtINR(s.netEarned)}</span>
-                      <span className="text-[10px] text-gray-400 w-16 text-right">{s.trips} trips</span>
-                    </div>
+
+          {/* ── Top stats grid ── */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard
+              label="Host Earnings (net)" value={fmtINR(totalNetEarned)}
+              sub={`${totalTripsHosted} trips hosted`}
+              icon={Car} accent="bg-blue-100 text-blue-600"
+              trend={bestMonth ? `Best: ${fmtINR(bestMonth.netEarned)} in ${bestMonth.month}` : undefined}
+              trendUp
+            />
+            <StatCard
+              label="Platform Fees Paid" value={fmtINR(totalFees)}
+              sub="5% of gross earnings"
+              icon={Shield} accent="bg-gray-100 text-gray-500"
+            />
+            <StatCard
+              label="Passenger Spend" value={fmtINR(totalSpent)}
+              sub={`${guestEntries.length} trips taken`}
+              icon={Users} accent="bg-purple-100 text-purple-600"
+              trend={totalSpent > 0 ? `Avg ${fmtINR(Math.round(totalSpent / Math.max(guestEntries.length, 1)))} per trip` : undefined}
+            />
+            <StatCard
+              label="Net Balance" value={fmtINR(netBalance)}
+              sub="Earned minus spent"
+              icon={Wallet} accent={netBalance >= 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-500'}
+              trend={netBalance >= 0 ? 'In profit' : 'Spending > Earning'}
+              trendUp={netBalance >= 0}
+            />
+          </div>
+
+          {/* ── Two column: Chart + Recent payouts ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
+
+            {/* Weekly earnings chart */}
+            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <BarChart2 size={16} className="text-blue-600" />
+                  <h3 className="font-bold text-gray-900 text-sm">Monthly Earnings</h3>
+                </div>
+                <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+                  {(['week','month','year'] as const).map(v => (
+                    <button key={v} onClick={() => setView(v)}
+                      className={`text-[11px] font-bold px-3 py-1 rounded-lg transition capitalize ${
+                        view === v ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'
+                      }`}>
+                      {v === 'week' ? 'Week' : v === 'month' ? 'Month' : 'Year'}
+                    </button>
                   ))}
                 </div>
-              </>
-            ) : (
-              <div className="text-center py-10 text-gray-400 text-sm">No earnings data yet</div>
-            )}
-          </div>
-        </div>
-
-        {/* Recent payouts + linked bank */}
-        <div className="space-y-4">
-          {/* Recent payouts */}
-          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-            <div className="px-4 py-3.5 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="font-bold text-gray-900 text-sm">Recent Payouts</h3>
-              <span className="text-[10px] text-gray-400">Host trips only</span>
+              </div>
+              <div className="p-5">
+                {chartData.length > 0 ? (
+                  <>
+                    <BarChart data={chartData} />
+                    <div className="mt-5 space-y-2">
+                      {monthlySummaries.slice(0, 4).map(s => (
+                        <div key={s.month} className="flex items-center gap-3 text-sm">
+                          <div className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                          <span className="font-medium text-gray-700 w-24 shrink-0">{s.month}</span>
+                          <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-blue-500 rounded-full"
+                              style={{ width: `${Math.min((s.netEarned / (monthlySummaries[0]?.netEarned || 1)) * 100, 100)}%` }} />
+                          </div>
+                          <span className="font-bold text-gray-900 w-20 text-right">{fmtINR(s.netEarned)}</span>
+                          <span className="text-[10px] text-gray-400 w-16 text-right">{s.trips} trips</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center py-10 text-gray-400 text-sm">No earnings data yet</div>
+                )}
+              </div>
             </div>
-            <div className="divide-y divide-gray-50">
-              {hostEntries.slice(0, 4).length > 0 ? hostEntries.slice(0, 4).map((e, i) => (
-                <div key={i} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition">
-                  <div className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-gray-800 truncate">{e.route}</p>
-                    <p className="text-[10px] text-gray-400">{e.date}</p>
-                  </div>
-                  <span className="text-sm font-black text-emerald-600">{fmtINR(e.net)}</span>
+
+            {/* Recent payouts + linked bank */}
+            <div className="space-y-4">
+              {/* Recent payouts */}
+              <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+                <div className="px-4 py-3.5 border-b border-gray-100 flex items-center justify-between">
+                  <h3 className="font-bold text-gray-900 text-sm">Recent Payouts</h3>
+                  <span className="text-[10px] text-gray-400">Host trips only</span>
                 </div>
-              )) : (
-                <div className="px-4 py-6 text-center text-gray-400 text-xs">No host earnings yet</div>
-              )}
-            </div>
-            {hostEntries.length > 4 && (
-              <div className="px-4 py-2.5 border-t border-gray-100">
-                <button onClick={() => setFilterType('HOST')}
-                  className="w-full text-xs text-blue-600 font-semibold hover:underline">
-                  View all {hostEntries.length} host trips →
-                </button>
+                <div className="divide-y divide-gray-50">
+                  {hostEntries.slice(0, 4).length > 0 ? hostEntries.slice(0, 4).map((e, i) => (
+                    <div key={i} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition">
+                      <div className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-gray-800 truncate">{e.route}</p>
+                        <p className="text-[10px] text-gray-400">{e.date}</p>
+                      </div>
+                      <span className="text-sm font-black text-emerald-600">{fmtINR(e.net)}</span>
+                    </div>
+                  )) : (
+                    <div className="px-4 py-6 text-center text-gray-400 text-xs">No host earnings yet</div>
+                  )}
+                </div>
+                {hostEntries.length > 4 && (
+                  <div className="px-4 py-2.5 border-t border-gray-100">
+                    <button onClick={() => setFilterType('HOST')}
+                      className="w-full text-xs text-blue-600 font-semibold hover:underline">
+                      View all {hostEntries.length} host trips →
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* Quick stats */}
-          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-4 space-y-3">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Quick Stats</p>
-            {[
-              { label: 'Completion rate', value: totalTripsHosted > 0 ? `${Math.round((hostEntries.filter(e => e.status === 'COMPLETED').length / totalTripsHosted) * 100)}%` : '—' },
-              { label: 'Best earning route', value: topRoute ? topRoute[0].split('→')[0].trim() + ' →...' : '—' },
-              { label: 'Best month',  value: bestMonth ? bestMonth.month : '—' },
-              { label: 'Total distance', value: `${entries.reduce((s, e) => s + (e.distanceKm || 0), 0).toFixed(0)} km` },
-            ].map(({ label, value }) => (
-              <div key={label} className="flex justify-between items-center">
-                <span className="text-xs text-gray-500">{label}</span>
-                <span className="text-sm font-bold text-gray-900 truncate max-w-[140px] text-right">{value}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Spend summary */}
-          {guestEntries.length > 0 && (
-            <div className="bg-purple-50 border border-purple-100 rounded-2xl p-4">
-              <p className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-3">As Passenger</p>
-              <p className="text-2xl font-black text-purple-700">{fmtINR(totalSpent)}</p>
-              <p className="text-xs text-purple-400 mt-0.5">across {guestEntries.length} trips</p>
-              <div className="mt-3 space-y-1.5">
-                {guestEntries.slice(0, 3).map((e, i) => (
-                  <div key={i} className="flex justify-between text-xs">
-                    <span className="text-purple-600 truncate max-w-[140px]">{e.route}</span>
-                    <span className="text-purple-800 font-bold">{fmtINR(e.amount)}</span>
+              {/* Quick stats */}
+              <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-4 space-y-3">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Quick Stats</p>
+                {[
+                  { label: 'Completion rate', value: totalTripsHosted > 0 ? `${Math.round((hostEntries.filter(e => e.status === 'COMPLETED').length / totalTripsHosted) * 100)}%` : '—' },
+                  { label: 'Best earning route', value: topRoute ? topRoute[0].split('→')[0].trim() + ' →...' : '—' },
+                  { label: 'Best month',  value: bestMonth ? bestMonth.month : '—' },
+                  { label: 'Total distance', value: `${entries.reduce((s, e) => s + (e.distanceKm || 0), 0).toFixed(0)} km` },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex justify-between items-center">
+                    <span className="text-xs text-gray-500">{label}</span>
+                    <span className="text-sm font-bold text-gray-900 truncate max-w-[140px] text-right">{value}</span>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* ── Full transaction history ── */}
-      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-          <h3 className="font-bold text-gray-900">Transaction History</h3>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
-              {(['all','HOST','GUEST'] as const).map(f => (
-                <button key={f} onClick={() => setFilterType(f)}
-                  className={`text-[11px] font-bold px-3 py-1 rounded-lg transition ${
-                    filterType === f ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'
-                  }`}>
-                  {f === 'all' ? 'All' : f === 'HOST' ? 'Hosting' : 'Travelling'}
+              {/* Spend summary */}
+              {guestEntries.length > 0 && (
+                <div className="bg-purple-50 border border-purple-100 rounded-2xl p-4">
+                  <p className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-3">As Passenger</p>
+                  <p className="text-2xl font-black text-purple-700">{fmtINR(totalSpent)}</p>
+                  <p className="text-xs text-purple-400 mt-0.5">across {guestEntries.length} trips</p>
+                  <div className="mt-3 space-y-1.5">
+                    {guestEntries.slice(0, 3).map((e, i) => (
+                      <div key={i} className="flex justify-between text-xs">
+                        <span className="text-purple-600 truncate max-w-[140px]">{e.route}</span>
+                        <span className="text-purple-800 font-bold">{fmtINR(e.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Full transaction history ── */}
+          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+              <h3 className="font-bold text-gray-900">Transaction History</h3>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+                  {(['all','HOST','GUEST'] as const).map(f => (
+                    <button key={f} onClick={() => setFilterType(f)}
+                      className={`text-[11px] font-bold px-3 py-1 rounded-lg transition ${
+                        filterType === f ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'
+                      }`}>
+                      {f === 'all' ? 'All' : f === 'HOST' ? 'Hosting' : 'Travelling'}
+                    </button>
+                  ))}
+                </div>
+                {months.length > 0 && (
+                  <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
+                    className="text-xs border border-gray-200 rounded-xl px-3 py-1.5 bg-white outline-none focus:ring-2 focus:ring-blue-500 text-gray-600">
+                    <option value="all">All months</option>
+                    {months.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                )}
+                <button onClick={handleExport}
+                  className="flex items-center gap-1.5 text-xs border border-gray-200 rounded-xl px-3 py-1.5 text-gray-500 hover:bg-gray-50 transition">
+                  <Download size={12} /> Export
                 </button>
-              ))}
+              </div>
             </div>
-            {months.length > 0 && (
-              <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
-                className="text-xs border border-gray-200 rounded-xl px-3 py-1.5 bg-white outline-none focus:ring-2 focus:ring-blue-500 text-gray-600">
-                <option value="all">All months</option>
-                {months.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
+
+            <div className="grid grid-cols-[1fr_auto] px-5 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-black uppercase tracking-widest text-gray-400">
+              <span>Transaction</span>
+              <span className="text-right">Amount</span>
+            </div>
+
+            <div className="divide-y divide-gray-50">
+              {displayed.length > 0 ? (
+                displayed.map((e, i) => <TxRow key={i} entry={e} />)
+              ) : (
+                <div className="py-12 text-center text-gray-400 text-sm">
+                  No transactions match your filters
+                </div>
+              )}
+            </div>
+
+            {displayed.length > 0 && (
+              <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex flex-wrap justify-between items-center gap-2 text-xs text-gray-500">
+                <span>{displayed.length} transaction{displayed.length !== 1 ? 's' : ''}</span>
+                <div className="flex items-center gap-4">
+                  <span>
+                    Host net: <span className="font-bold text-emerald-600">
+                      {fmtINR(displayed.filter(e => e.type === 'HOST').reduce((s, e) => s + e.net, 0))}
+                    </span>
+                  </span>
+                  <span>
+                    Spent: <span className="font-bold text-red-500">
+                      {fmtINR(displayed.filter(e => e.type === 'GUEST').reduce((s, e) => s + e.amount, 0))}
+                    </span>
+                  </span>
+                </div>
+              </div>
             )}
-            <button onClick={handleExport}
-              className="flex items-center gap-1.5 text-xs border border-gray-200 rounded-xl px-3 py-1.5 text-gray-500 hover:bg-gray-50 transition">
-              <Download size={12} /> Export
-            </button>
           </div>
-        </div>
-
-        <div className="grid grid-cols-[1fr_auto] px-5 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-black uppercase tracking-widest text-gray-400">
-          <span>Transaction</span>
-          <span className="text-right">Amount</span>
-        </div>
-
-        <div className="divide-y divide-gray-50">
-          {displayed.length > 0 ? (
-            displayed.map((e, i) => <TxRow key={i} entry={e} />)
-          ) : (
-            <div className="py-12 text-center text-gray-400 text-sm">
-              No transactions match your filters
-            </div>
-          )}
-        </div>
-
-        {displayed.length > 0 && (
-          <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex flex-wrap justify-between items-center gap-2 text-xs text-gray-500">
-            <span>{displayed.length} transaction{displayed.length !== 1 ? 's' : ''}</span>
-            <div className="flex items-center gap-4">
-              <span>
-                Host net: <span className="font-bold text-emerald-600">
-                  {fmtINR(displayed.filter(e => e.type === 'HOST').reduce((s, e) => s + e.net, 0))}
-                </span>
-              </span>
-              <span>
-                Spent: <span className="font-bold text-red-500">
-                  {fmtINR(displayed.filter(e => e.type === 'GUEST').reduce((s, e) => s + e.amount, 0))}
-                </span>
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   )
 }
