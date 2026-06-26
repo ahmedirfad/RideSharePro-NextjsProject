@@ -41,7 +41,7 @@ async function assertBookingParty(bookingId, userId) {
 }
 
 // ── Push notification helper (call from anywhere in your app) ──────────────
-// ✅ FIX: Proper serialization - convert ObjectId to string
+//  FIX: Proper serialization - convert ObjectId to string
 async function pushNotification(io, { userId, type, title, body, link = "", meta = {} }) {
   const notif = await Notification.create({ userId, type, title, body, link, meta })
 
@@ -97,7 +97,7 @@ function setupSocket(io) {
           .populate("senderId", "name profilePhoto")
           .lean();
 
-        // ✅ FIX: Serialize all fields properly
+        //  FIX: Serialize all fields properly
         const formatted = messages.map((m) => ({
           id: m._id.toString(),
           bookingId: m.bookingId.toString(),
@@ -142,7 +142,7 @@ function setupSocket(io) {
 
         const populated = await message.populate("senderId", "name profilePhoto");
 
-        // ✅ FIX: Serialize properly
+        //  FIX: Serialize properly
         const payload = {
           id: message._id.toString(),
           bookingId: message.bookingId.toString(),
@@ -197,7 +197,7 @@ function setupSocket(io) {
         );
         socket.to(chatRoom(bookingId)).emit("messages_read", { bookingId, readBy: userId });
 
-        // ✅ NEW: Send updated unread count back to client
+        //  NEW: Send updated unread count back to client
         const unreadCount = await Message.countDocuments({
           bookingId,
           readBy: { $ne: userId },
@@ -227,7 +227,7 @@ function setupSocket(io) {
     });
 
     // ── disconnect ─────────────────────────────────────────
-    // ✅ FIX: Use 'disconnecting' instead of 'disconnect' for room cleanup
+    //  FIX: Use 'disconnecting' instead of 'disconnect' for room cleanup
     socket.on("disconnecting", () => {
       // Rooms are automatically cleaned, but we can leave manually
       socket.leave(userRoom(userId));

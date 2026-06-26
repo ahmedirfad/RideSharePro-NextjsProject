@@ -3,7 +3,6 @@ const Booking = require("../models/Booking");
 const User = require("../models/User");
 const { notify } = require("../utils/notify");
 
-// ✅ NEW: Import email functions
 const {
   sendBookingConfirmationEmail,
   sendNewBookingAlertEmail,

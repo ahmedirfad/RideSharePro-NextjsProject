@@ -5,7 +5,6 @@ const User = require("../models/User");
 const { notify } = require("../utils/notify");
 const { verifyPayment } = require('../controllers/paymentController')
 
-// ✅ NEW: Import email functions
 const {
     sendTripPostedEmail,
     sendTripReminderEmail,

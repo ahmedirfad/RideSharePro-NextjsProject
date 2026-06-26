@@ -24,8 +24,8 @@ const quickReplyRoutes = require("./routes/quickReplyRoutes");
 const refundRoutes = require('./routes/refundRoutes');
 
 const { setupSocket } = require("./socket/socketHandler");
-const { startEmailCron } = require("./services/emailCron"); // ✅ NEW
-const { verifyTransporter } = require("./config/email"); // ✅ NEW
+const { startEmailCron } = require("./services/emailCron"); // 
+const { verifyTransporter } = require("./config/email"); // 
 
 dotenv.config();
 

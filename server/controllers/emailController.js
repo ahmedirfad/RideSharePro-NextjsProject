@@ -58,12 +58,9 @@ const sendNewDeviceLoginEmail = async (user, deviceInfo) => {
   });
 };
 
-// TRIPS
-// server/controllers/emailController.js - sendTripPostedEmail
 const sendTripPostedEmail = async (driver, trip) => {
-  // ✅ Add null checks
   if (!driver || !trip) {
-    console.error('❌ sendTripPostedEmail: Missing driver or trip data');
+    console.error(' sendTripPostedEmail: Missing driver or trip data');
     return;
   }
   

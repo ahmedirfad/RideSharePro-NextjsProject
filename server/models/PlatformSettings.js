@@ -1,9 +1,6 @@
-// server/models/PlatformSettings.js
+
 const mongoose = require("mongoose");
 
-// Singleton document — only one settings doc ever exists.
-// Use PlatformSettings.getSingleton() to read,
-// PlatformSettings.updateSingleton(patch) to write.
 const PlatformSettingsSchema = new mongoose.Schema(
   {
     // ── General ──────────────────────────────────────────────
