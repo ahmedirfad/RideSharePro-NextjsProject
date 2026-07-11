@@ -12,14 +12,12 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Declare build arguments needed at build-time
 ARG NEXT_PUBLIC_SERVER_URL=http://localhost:5002
 ARG NEXT_PUBLIC_API_URL=http://localhost:5002/api
 ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID
 ARG NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY
 
-# Set them as environment variables during build time
 ENV NEXT_PUBLIC_SERVER_URL=$NEXT_PUBLIC_SERVER_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID
@@ -36,9 +34,25 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Copy build artifacts and dependencies
-COPY --from=builder /app ./
+# Configure non-root system group and user
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+# Copy built public assets
+COPY --from=builder /app/public ./public
+
+# Setup folder permissions for cache directories
+RUN mkdir .next && chown nextjs:nodejs .next
+
+# Leverages output traces compiled in standalone mode
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
 
 EXPOSE 3000
 
-CMD ["npm", "start"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://localhost:3000/').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
+
+CMD ["node", "server.js"]
