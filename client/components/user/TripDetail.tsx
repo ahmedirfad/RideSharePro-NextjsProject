@@ -560,51 +560,53 @@ export default function TripDetailsPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-[1fr_360px] gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
 
           {/* LEFT COLUMN */}
           <div className="space-y-4">
 
             {/* Driver Card */}
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
-              <div className="flex items-start gap-4">
-                <div className="relative">
-                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white font-bold text-lg flex items-center justify-center">
-                    {getInitials(driver.name)}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-4">
+                  <div className="relative shrink-0">
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white font-bold text-lg flex items-center justify-center">
+                      {getInitials(driver.name)}
+                    </div>
+                    <span className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 border-2 border-white rounded-full" />
                   </div>
-                  <span className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 border-2 border-white rounded-full" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h1 className="text-xl font-bold text-gray-900">{driver.name}</h1>
-                    {driver.isVerified && (
-                      <span className="flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded-full font-medium">
-                        <ShieldCheck size={11} /> Verified
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h1 className="text-xl font-bold text-gray-900 truncate">{driver.name}</h1>
+                      {driver.isVerified && (
+                        <span className="flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded-full font-medium shrink-0">
+                          <ShieldCheck size={11} /> Verified
+                        </span>
+                      )}
+                      {isHost && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full ml-2 shrink-0">You are the host</span>}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1 flex-wrap">
+                      <span className="flex items-center gap-1 text-sm shrink-0">
+                        <Stars rating={driver.rating ?? 0} />
+                        <span className="font-semibold text-gray-900 ml-1">{(driver.rating ?? 0).toFixed(1)}</span>
                       </span>
-                    )}
-                    {isHost && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full ml-2">You are the host</span>}
-                  </div>
-                  <div className="flex items-center gap-3 mt-1 flex-wrap">
-                    <span className="flex items-center gap-1 text-sm">
-                      <Stars rating={driver.rating ?? 0} />
-                      <span className="font-semibold text-gray-900 ml-1">{(driver.rating ?? 0).toFixed(1)}</span>
-                    </span>
-                    <span className="text-gray-300">·</span>
-                    <span className="text-sm text-gray-500">Member since {new Date(trip.createdAt).getFullYear()}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-2">
-                    <Car size={13} className="text-gray-400" />
-                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                      {car.name} {car.variant} · {plate}
-                    </span>
+                      <span className="text-gray-300">·</span>
+                      <span className="text-sm text-gray-500 shrink-0">Member since {new Date(trip.createdAt).getFullYear()}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <Car size={13} className="text-gray-400 shrink-0" />
+                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full truncate">
+                        {car.name} {car.variant} · {plate}
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <div className="flex flex-col gap-2">
+                <div className="flex sm:flex-col gap-2 w-full sm:w-auto shrink-0 mt-3 sm:mt-0">
                   <button onClick={handleChatClick}
-                    className="flex items-center gap-1.5 px-3 py-1.5 border border-blue-200 bg-blue-50 rounded-lg text-xs text-blue-600 hover:bg-blue-100 transition">
+                    className="flex-grow sm:flex-grow-0 flex items-center justify-center gap-1.5 px-3 py-1.5 border border-blue-200 bg-blue-50 rounded-lg text-xs text-blue-600 hover:bg-blue-100 transition">
                     <MessageCircle size={13} /> Chat
                   </button>
-                  <button className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition">
+                  <button className="flex-grow sm:flex-grow-0 flex items-center justify-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition">
                     <Phone size={13} /> Call
                   </button>
                 </div>
@@ -614,7 +616,7 @@ export default function TripDetailsPage() {
             {/* Trip Information */}
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
               <h2 className="font-semibold text-gray-900 mb-4">Trip Information</h2>
-              <div className="grid grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
                   { icon: Calendar, label: 'DATE', value: formatDate(trip.departureDate), highlight: false },
                   { icon: Clock, label: 'DEPARTURE', value: trip.departureTime, highlight: false },
@@ -780,7 +782,7 @@ export default function TripDetailsPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {['AC', 'Music System', 'USB Charging', 'Luggage Space', 'No Pets', 'No Smoking'].map(item => (
                   <div key={item} className="flex items-center gap-1.5 bg-gray-50 rounded-lg px-2.5 py-2">
                     <span className="text-xs text-gray-600 font-medium">{item}</span>

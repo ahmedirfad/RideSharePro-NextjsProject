@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import api from '@/lib/api'
 
-export default function VerifyOtpPage() {
+function VerifyOtpPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const email = searchParams.get('email') || ''
@@ -186,5 +186,17 @@ export default function VerifyOtpPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function VerifyOtpPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center text-gray-450 text-sm">Loading verification page...</div>
+      </div>
+    }>
+      <VerifyOtpPageContent />
+    </Suspense>
   )
 }

@@ -12,7 +12,14 @@ import {
 import { useAuthStore } from '@/store/authStore'
 import api from '@/lib/api'
 
-const NAV = [
+interface NavItem {
+  icon: any
+  label: string
+  href: string
+  badge?: string | number
+}
+
+const NAV: NavItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard',    href: '/admin' },
   { icon: Users,           label: 'Users',         href: '/admin/users'     },
   { icon: Car,             label: 'Trips',         href: '/admin/trips'     },

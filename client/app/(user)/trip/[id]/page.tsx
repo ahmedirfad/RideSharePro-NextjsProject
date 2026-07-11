@@ -8,7 +8,7 @@ function TripDetailPage() {
   const params = useParams()
   const tripId = params.id as string
 
-  return <TripDetail tripId={tripId} />
+  return <TripDetail />
 }
 
 export default withAuth(TripDetailPage)

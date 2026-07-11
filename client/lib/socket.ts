@@ -29,7 +29,9 @@ export function getSocket(): Socket {
       
       // Re-authenticate with latest token
       const newToken = localStorage.getItem('accessToken') || ''
-      socket?.auth?.update?.({ token: newToken })
+      if (socket) {
+        socket.auth = { token: newToken }
+      }
       
       // Emit event to re-join rooms (handled on server)
       socket?.emit('rejoin_rooms')
@@ -41,7 +43,9 @@ export function getSocket(): Socket {
       
       // Update auth token on each attempt
       const newToken = localStorage.getItem('accessToken') || ''
-      socket?.auth?.update?.({ token: newToken })
+      if (socket) {
+        socket.auth = { token: newToken }
+      }
     })
 
     socket.on('reconnect_error', (error) => {

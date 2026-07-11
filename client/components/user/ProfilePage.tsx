@@ -129,7 +129,7 @@ function EditModal({ open, onClose, user, onSave }: {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="bg-white rounded-2xl shadow-2xl w-[500px] max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="font-bold text-gray-900 text-base">Edit Profile</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition">
@@ -383,7 +383,7 @@ export default function ProfilePage() {
     )
   }
 
-  const displayUser = userData || authUser
+  const displayUser = (userData || authUser) as any
   const userRating = displayUser?.rating || 0
   const totalRatings = displayUser?.totalRatings || 0
 
@@ -399,21 +399,21 @@ export default function ProfilePage() {
       <div className="max-w-7xl mx-auto p-6">
 
         {/* Page Header */}
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">My Profile</h1>
             <p className="text-gray-500 text-sm mt-1">Manage your profile and account settings</p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="relative">
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="relative flex-1 sm:flex-none">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 placeholder="Search..."
-                className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-            <Link href="/settings">
+            <Link href="/settings" className="shrink-0">
               <button className="relative p-2 rounded-lg hover:bg-gray-100 transition">
                 <Bell size={18} className="text-gray-600" />
               </button>
@@ -433,7 +433,7 @@ export default function ProfilePage() {
 
         {/* Profile Header */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6">
-          <div className="flex flex-wrap items-start gap-6">
+          <div className="flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-left gap-6">
             {/* Avatar */}
             <div className="relative shrink-0">
               <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 text-white font-bold text-3xl flex items-center justify-center shadow-lg">
@@ -448,8 +448,8 @@ export default function ProfilePage() {
             </div>
 
             {/* User Info */}
-            <div className="flex-1">
-              <div className="flex flex-wrap items-center gap-3 mb-2">
+            <div className="flex-1 w-full">
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 mb-2">
                 <h2 className="text-2xl font-bold text-gray-900">{displayUser?.name || 'User'}</h2>
                 {displayUser?.isEmailVerified && (
                   <Chip variant="blue">
@@ -460,12 +460,12 @@ export default function ProfilePage() {
                   <Chip variant="green">⭐ {userRating.toFixed(1)} ★</Chip>
                 )}
               </div>
-              <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500 mb-3">
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 text-sm text-gray-500 mb-3">
                 <span className="flex items-center gap-1"><Mail size={14} /> {displayUser?.email}</span>
                 <span className="flex items-center gap-1"><Phone size={14} /> {displayUser?.phone}</span>
                 <span className="flex items-center gap-1"><MapPin size={14} /> {displayUser?.location || 'Location not set'}</span>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
                 <button
                   onClick={() => setEditOpen(true)}
                   className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition"
@@ -479,7 +479,7 @@ export default function ProfilePage() {
             </div>
 
             {/* Stats Quick View */}
-            <div className="flex gap-4">
+            <div className="flex justify-center sm:justify-start gap-4 w-full sm:w-auto border-t sm:border-t-0 border-gray-100 pt-4 sm:pt-0 shrink-0">
               <div className="text-center">
                 <div className="text-2xl font-bold text-gray-900">{stats.hosted}</div>
                 <div className="text-xs text-gray-500">Trips Hosted</div>
@@ -499,7 +499,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {[
             { label: 'Trips Hosted', value: stats.hosted.toString(), icon: Car, color: 'text-blue-600', bg: 'bg-blue-50' },
             { label: 'Trips Taken', value: stats.taken.toString(), icon: MapPin, color: 'text-purple-600', bg: 'bg-purple-50' },
@@ -530,7 +530,7 @@ export default function ProfilePage() {
                   Update
                 </button>
               </div>
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 {[
                   { label: 'Full Name', value: displayUser?.name || 'Not set' },
                   { label: 'Email Address', value: displayUser?.email || 'Not set' },
@@ -541,7 +541,7 @@ export default function ProfilePage() {
                 ].map((field, i) => (
                   <div key={i}>
                     <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">{field.label}</p>
-                    <p className="text-sm font-medium text-gray-900">{field.value}</p>
+                    <p className="text-sm font-medium text-gray-900 break-all">{field.value}</p>
                   </div>
                 ))}
               </div>
@@ -584,7 +584,7 @@ export default function ProfilePage() {
                             <>
                               <span className="font-semibold text-gray-900 text-sm">{trip.segment}</span>
                               <Chip variant="green">Your journey</Chip>
-                              <Chip variant={trip.role === 'HOST' ? 'blue' : 'purple'}>{trip.role}</Chip>
+                              <Chip variant="purple">{trip.role}</Chip>
                             </>
                           ) : (
                             <>
@@ -660,11 +660,11 @@ export default function ProfilePage() {
                 <h3 className="font-semibold text-gray-900 text-sm">Verification Status</h3>
               </div>
               <div className="divide-y divide-gray-100">
-                {[
-                  { icon: Mail, label: 'Email Address', status: displayUser?.isEmailVerified ? 'verified' : 'pending' as const },
-                  { icon: Phone, label: 'Phone Number', status: displayUser?.phone ? 'verified' : 'pending' as const },
-                  { icon: FileText, label: 'Government ID', status: 'pending' as const },
-                ].map((item, i) => {
+                {([
+                  { icon: Mail, label: 'Email Address', status: displayUser?.isEmailVerified ? 'verified' : 'pending' },
+                  { icon: Phone, label: 'Phone Number', status: displayUser?.phone ? 'verified' : 'pending' },
+                  { icon: FileText, label: 'Government ID', status: 'pending' },
+                ] as const).map((item, i) => {
                   const Icon = item.icon
                   return (
                     <div key={i} className="flex items-center justify-between px-5 py-3">

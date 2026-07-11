@@ -144,7 +144,7 @@ export default function ActiveTrip() {
           
           // Calculate passenger count
           const bookings = tripData.bookings || []
-          const uniquePassengers = new Set(bookings.map(b => b.passengerId?._id))
+          const uniquePassengers = new Set(bookings.map((b: any) => b.passengerId?._id))
           setPassengerCount(uniquePassengers.size)
           
           // Calculate total earned
@@ -292,7 +292,7 @@ export default function ActiveTrip() {
     <div className="min-h-screen bg-gray-50 flex flex-col">
       
       {/* Live Header Bar */}
-      <div className="bg-gray-900 rounded-t-2xl px-5 py-2.5 flex items-center justify-between shrink-0 z-20">
+      <div className="bg-gray-900 rounded-t-2xl px-4 sm:px-5 py-3.5 flex flex-wrap items-center justify-between gap-4 shrink-0 z-20">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5 bg-green-500/20 border border-green-500/40 text-green-400 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-ping" /> LIVE
@@ -333,7 +333,7 @@ export default function ActiveTrip() {
       </div>
 
       {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden min-h-0 gap-4 p-4">
+      <div className="flex flex-col lg:flex-row flex-1 min-h-0 gap-4 p-4 overflow-y-auto lg:overflow-hidden">
         
         {/* LEFT PANEL - Map + Info */}
         <div className="flex-1 flex flex-col overflow-y-auto bg-white rounded-2xl shadow-sm border border-gray-100">
@@ -376,7 +376,7 @@ export default function ActiveTrip() {
               <span>{trip.to}</span>
             </div>
 
-            <div className="grid grid-cols-4 gap-3 mt-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
               <Stat icon={Activity} value={`${Math.round(progress)}%`} label="Done" accent="text-blue-600" />
               <Stat icon={Navigation} value={`${Math.round(distanceCovered)}km`} label="Covered" />
               <Stat icon={Users} value={passengerCount.toString()} label="Aboard" accent="text-green-600" />
@@ -447,7 +447,7 @@ export default function ActiveTrip() {
         </div>
 
         {/* RIGHT PANEL - Chat */}
-        <div className="w-[380px] shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+        <div className="w-full lg:w-[380px] shrink-0 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col">
           
           {/* Chat Header */}
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">

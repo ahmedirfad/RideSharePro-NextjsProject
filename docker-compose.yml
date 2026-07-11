@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: ridesharepro-server
+    restart: always
+    ports:
+      - "5002:5002"
+    env_file:
+      - ./server/.env
+    environment:
+      - PORT=5002
+      - NODE_ENV=production
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_SERVER_URL=http://localhost:5002
+        - NEXT_PUBLIC_API_URL=http://localhost:5002/api
+        - NEXT_PUBLIC_GOOGLE_CLIENT_ID=192079311703-f80kvg0i1qo80bidnl3o4g2vidug6tlh.apps.googleusercontent.com
+        - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_51Tm4t7IpjgHqQ1GGkptRrEdo1VovtJlbqENPYqOb9JNIbfNxYRthdJByqSCHouHtp7PljAOf2uNswGenmJrtXo2P00U6LIbv37
+        - NEXT_PUBLIC_VAPID_PUBLIC_KEY=BIoh6it-iWxgq8HKg_Gaa-IUic8chKZ9v9uL9BRpCC1EhHWGYmL7QBpplctpQOsAVX2Z8OmKiFR1N042Wd-ZI5w
+    container_name: ridesharepro-client
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      - server

@@ -8,7 +8,7 @@ import {
     MapPin, Calendar, User, ArrowRight, ArrowLeftRight,
     RotateCcw, ShieldCheck, AlertCircle, Loader2, ChevronDown,
     Clock, CalendarDays, Sparkles, Zap, ClockArrowUp, 
-    CalendarIcon, Route, Info, TrendingUp
+    CalendarIcon, Route, Info, TrendingUp, X
 } from 'lucide-react'
 import api from '@/lib/api'
 
@@ -158,17 +158,24 @@ function LocationInput({ value, onChange, placeholder, icon }: {
     )
 }
 
-function FilterSidebar({ filters, setFilters, onReset }: { filters: any; setFilters: (f: any) => void; onReset: () => void }) {
+function FilterContent({ filters, setFilters, onReset, isMobile = false }: {
+    filters: any
+    setFilters: (f: any) => void
+    onReset: () => void
+    isMobile?: boolean
+}) {
     return (
-        <aside className="w-56 shrink-0 bg-white border border-gray-200 rounded-lg p-4 space-y-5 self-start sticky top-[89px]">
-            <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
-                    <SlidersHorizontal size={14} /> Filters
-                </span>
-                <button onClick={onReset} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                    <RotateCcw size={11} /> Reset
-                </button>
-            </div>
+        <div className="space-y-5">
+            {!isMobile && (
+                <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                        <SlidersHorizontal size={14} /> Filters
+                    </span>
+                    <button onClick={onReset} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                        <RotateCcw size={11} /> Reset
+                    </button>
+                </div>
+            )}
 
             <div>
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Trip Type</p>
@@ -243,6 +250,14 @@ function FilterSidebar({ filters, setFilters, onReset }: { filters: any; setFilt
                     ))}
                 </div>
             </div>
+        </div>
+    )
+}
+
+function FilterSidebar({ filters, setFilters, onReset }: { filters: any; setFilters: (f: any) => void; onReset: () => void }) {
+    return (
+        <aside className="w-56 shrink-0 bg-white border border-gray-200 rounded-lg p-4 self-start sticky top-[89px] hidden md:block">
+            <FilterContent filters={filters} setFilters={setFilters} onReset={onReset} />
         </aside>
     )
 }
@@ -413,8 +428,26 @@ function TripCard({ trip, searchFrom, searchTo, searchDate, isAdjacent }: {
                                     {Math.round((1 - trip.seatsLeft / trip.totalSeats) * 100)}% filled
                                 </span>
                             </div>
+
+                            {/* Mobile bottom pricing & CTA */}
+                            <div className="flex sm:hidden items-center justify-between border-t border-gray-100 pt-3 mt-3">
+                                <div className="flex flex-col">
+                                    <div className="flex items-baseline gap-1.5">
+                                        <span className="text-xl font-bold text-blue-600">₹{trip.price}</span>
+                                        <span className="text-xs text-gray-400 line-through">₹{trip.fullPrice}</span>
+                                    </div>
+                                    <span className="text-[9px] text-gray-400">{trip.distanceKm}km distance</span>
+                                </div>
+                                <Link href={detailLink}>
+                                    <button className={`px-3.5 py-2 text-white text-xs font-semibold rounded-lg transition ${
+                                        isAdjacent ? 'bg-blue-500 hover:bg-blue-600' : 'bg-blue-600 hover:bg-blue-700'
+                                    }`}>
+                                        {isAdjacent ? 'View Adjacent' : 'View Ride'}
+                                    </button>
+                                </Link>
+                            </div>
                         </div>
-                        <div className="shrink-0 flex flex-col items-end gap-2 ml-2">
+                        <div className="hidden sm:flex shrink-0 flex flex-col items-end gap-2 ml-2">
                             <div className="text-right">
                                 <p className="text-xs text-gray-400 line-through">₹{trip.fullPrice}</p>
                                 <p className="text-2xl font-bold text-blue-600">₹{trip.price}</p>
@@ -467,6 +500,7 @@ export default function FindARidePage() {
         seats: 0,
         vehicles: ['Sedan', 'SUV'] as string[],
     })
+    const [showMobileFilters, setShowMobileFilters] = useState(false)
 
     const swapLocations = () => {
         const tempFrom = from
@@ -541,14 +575,14 @@ export default function FindARidePage() {
                 
                 // ── Sort ──
                 if (sortBy === 'Price: Low') {
-                    filteredResults.sort((a, b) => a.price - b.price)
-                    filteredAdjacent.sort((a, b) => a.price - b.price)
+                    filteredResults.sort((a: Trip, b: Trip) => a.price - b.price)
+                    filteredAdjacent.sort((a: Trip, b: Trip) => a.price - b.price)
                 } else if (sortBy === 'Price: High') {
-                    filteredResults.sort((a, b) => b.price - a.price)
-                    filteredAdjacent.sort((a, b) => b.price - a.price)
+                    filteredResults.sort((a: Trip, b: Trip) => b.price - a.price)
+                    filteredAdjacent.sort((a: Trip, b: Trip) => b.price - a.price)
                 } else if (sortBy === 'Rating') {
-                    filteredResults.sort((a, b) => b.rating - a.rating)
-                    filteredAdjacent.sort((a, b) => b.rating - a.rating)
+                    filteredResults.sort((a: Trip, b: Trip) => b.rating - a.rating)
+                    filteredAdjacent.sort((a: Trip, b: Trip) => b.rating - a.rating)
                 }
                 
                 setTrips(filteredResults)
@@ -623,22 +657,22 @@ export default function FindARidePage() {
     return (
         <div className="space-y-5">
             <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
-                <div className="grid grid-cols-[1fr_auto_1fr_auto_auto_auto] gap-3 items-end">
+                <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr_auto_auto_auto] gap-3 items-end">
                     <div>
                         <label className="text-xs text-gray-500 mb-1 block">From</label>
                         <LocationInput 
-                            value={from} 
-                            onChange={setFrom} 
-                            placeholder="Enter origin city" 
-                            icon={<span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />} 
+                             value={from} 
+                             onChange={setFrom} 
+                             placeholder="Enter origin city" 
+                             icon={<span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />} 
                         />
                     </div>
 
-                    <div className="mb-1">
+                    <div className="flex justify-center md:block md:mb-1">
                         <button
                             onClick={swapLocations}
                             type="button"
-                            className="w-9 h-9 flex items-center justify-center rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-500 hover:text-blue-600 transition"
+                            className="w-9 h-9 flex items-center justify-center rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-500 hover:text-blue-600 transition rotate-90 md:rotate-0"
                             title="Swap locations"
                         >
                             <ArrowLeftRight size={16} />
@@ -648,10 +682,10 @@ export default function FindARidePage() {
                     <div>
                         <label className="text-xs text-gray-500 mb-1 block">To</label>
                         <LocationInput 
-                            value={to} 
-                            onChange={setTo} 
-                            placeholder="Enter destination city" 
-                            icon={<span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />} 
+                             value={to} 
+                             onChange={setTo} 
+                             placeholder="Enter destination city" 
+                             icon={<span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />} 
                         />
                     </div>
 
@@ -660,8 +694,8 @@ export default function FindARidePage() {
                         <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2.5 focus-within:ring-2 focus-within:ring-blue-500 transition">
                             <Calendar size={14} className="text-gray-400 shrink-0" />
                             <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                                min={new Date().toISOString().split('T')[0]}
-                                className="text-sm text-gray-700 outline-none bg-transparent" />
+                                 min={new Date().toISOString().split('T')[0]}
+                                 className="text-sm text-gray-700 outline-none bg-transparent" />
                         </div>
                     </div>
 
@@ -670,14 +704,14 @@ export default function FindARidePage() {
                         <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2.5 focus-within:ring-2 focus-within:ring-blue-500 transition">
                             <User size={14} className="text-gray-400 shrink-0" />
                             <select value={passengers} onChange={e => setPassengers(Number(e.target.value))}
-                                className="text-sm text-gray-700 outline-none bg-transparent cursor-pointer">
-                                {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n} Passenger{n > 1 ? 's' : ''}</option>)}
+                                 className="text-sm text-gray-700 outline-none bg-transparent cursor-pointer">
+                                 {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n} Passenger{n > 1 ? 's' : ''}</option>)}
                             </select>
                         </div>
                     </div>
 
                     <button onClick={handleSearch} disabled={loading}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-semibold rounded-lg transition h-[42px]">
+                        className="w-full md:w-auto flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-semibold rounded-lg transition h-[42px]">
                         {loading ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
                         {loading ? 'Searching...' : 'Search'}
                     </button>
@@ -696,7 +730,7 @@ export default function FindARidePage() {
             <div className="flex gap-5 items-start">
                 <FilterSidebar filters={filters} setFilters={setFilters} onReset={resetFilters} />
                 <div className="flex-1 space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
                         <p className="text-gray-900 font-semibold text-sm">
                             {loading ? 'Searching...' : 
                                 trips.length > 0 ? `${trips.length} trip${trips.length !== 1 ? 's' : ''} found` :
@@ -705,6 +739,13 @@ export default function FindARidePage() {
                             }
                         </p>
                         <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setShowMobileFilters(true)}
+                                className="flex md:hidden items-center gap-1.5 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 bg-white hover:bg-gray-50"
+                            >
+                                <SlidersHorizontal size={13} />
+                                Filters
+                            </button>
                             <span className="text-xs text-gray-500">Sort by:</span>
                             <div className="flex items-center gap-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 bg-white cursor-pointer hover:bg-gray-50">
                                 <select value={sortBy} onChange={e => { setSortBy(e.target.value); if (searched) performSearch(filters, false) }}
@@ -790,6 +831,38 @@ export default function FindARidePage() {
                     )}
                 </div>
             </div>
+            {/* Mobile Filter Drawer */}
+            {showMobileFilters && (
+                <div className="fixed inset-0 z-50 bg-black/50 flex justify-end md:hidden">
+                    <div className="bg-white w-80 h-full p-5 overflow-y-auto flex flex-col justify-between">
+                        <div>
+                            <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-4">
+                                <span className="font-bold text-gray-900 flex items-center gap-1.5 text-sm">
+                                    <SlidersHorizontal size={14} /> Filters
+                                </span>
+                                <button onClick={() => setShowMobileFilters(false)} className="text-gray-400 hover:text-gray-600">
+                                    <X size={18} />
+                                </button>
+                            </div>
+                            <FilterContent filters={filters} setFilters={setFilters} onReset={resetFilters} isMobile={true} />
+                        </div>
+                        <div className="flex gap-3 pt-4 border-t border-gray-100 mt-6">
+                            <button
+                                onClick={() => { resetFilters(); setShowMobileFilters(false) }}
+                                className="flex-1 py-2 border border-gray-200 text-gray-600 rounded-lg text-xs font-semibold"
+                            >
+                                Reset
+                            </button>
+                            <button
+                                onClick={() => setShowMobileFilters(false)}
+                                className="flex-grow py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs transition"
+                            >
+                                Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

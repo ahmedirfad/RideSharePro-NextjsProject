@@ -612,7 +612,7 @@ export default function Earnings() {
               </div>
             </div>
 
-            <div className="relative z-10 mt-6 grid grid-cols-3 gap-4 border-t border-white/10 pt-5">
+            <div className="relative z-10 mt-6 grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-white/10 pt-5">
               {[
                 { label: 'AVG PER TRIP', value: fmtINR(avgPerTrip), icon: TrendingUp },
                 { label: 'TRIPS HOSTED', value: String(totalTripsHosted), icon: Car },

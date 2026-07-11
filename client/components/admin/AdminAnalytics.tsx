@@ -281,9 +281,9 @@ export default function AdminAnalytics() {
                 {formatKPIValue(totalRevenue)}
               </p>
               <span className={`flex items-center gap-0.5 text-[10px] font-bold mt-1 ${
-                data?.kpis?.revenueGrowth >= 0 ? 'text-green-400' : 'text-red-400'
+                (data?.kpis?.revenueGrowth ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'
               }`}>
-                {data?.kpis?.revenueGrowth >= 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
+                {(data?.kpis?.revenueGrowth ?? 0) >= 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
                 {Math.abs(data?.kpis?.revenueGrowth || 0)}%
               </span>
             </div>
@@ -294,9 +294,9 @@ export default function AdminAnalytics() {
                 {totalTrips.toLocaleString('en-IN')}
               </p>
               <span className={`flex items-center gap-0.5 text-[10px] font-bold mt-1 ${
-                data?.kpis?.tripsGrowth >= 0 ? 'text-green-400' : 'text-red-400'
+                (data?.kpis?.tripsGrowth ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'
               }`}>
-                {data?.kpis?.tripsGrowth >= 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
+                {(data?.kpis?.tripsGrowth ?? 0) >= 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
                 {Math.abs(data?.kpis?.tripsGrowth || 0)}%
               </span>
             </div>
@@ -307,9 +307,9 @@ export default function AdminAnalytics() {
                 {newUsers.toLocaleString('en-IN')}
               </p>
               <span className={`flex items-center gap-0.5 text-[10px] font-bold mt-1 ${
-                data?.kpis?.usersGrowth >= 0 ? 'text-green-400' : 'text-red-400'
+                (data?.kpis?.usersGrowth ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'
               }`}>
-                {data?.kpis?.usersGrowth >= 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
+                {(data?.kpis?.usersGrowth ?? 0) >= 0 ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
                 {Math.abs(data?.kpis?.usersGrowth || 0)}%
               </span>
             </div>

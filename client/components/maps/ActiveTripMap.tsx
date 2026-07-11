@@ -188,7 +188,7 @@ export default function ActiveTripMap({
           padding:4px 8px;border-radius:20px;border:1px solid #fbbf24;white-space:nowrap">
           ⚡ AI PICKUP
         </div>`,
-        className: '', iconAnchor: [44, 14],
+        iconAnchor: [44, 14],
       })
       const pickupPos = lerp(startC, endC, 0.12)
 

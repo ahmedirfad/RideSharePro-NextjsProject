@@ -8,7 +8,7 @@ function CheckoutRoutePage() {
   const params = useParams()
   const tripId = params.id as string
 
-  return <CheckoutPage tripId={tripId} />
+  return <CheckoutPage />
 }
 
 export default withAuth(CheckoutRoutePage)

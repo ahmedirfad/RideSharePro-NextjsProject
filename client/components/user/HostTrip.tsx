@@ -646,7 +646,7 @@ export default function HostTrip() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Host a Ride</h1>
           <p className="text-gray-500 text-sm mt-1">Fill in your trip details and post for passengers to book.</p>
@@ -658,7 +658,7 @@ export default function HostTrip() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-[1fr_320px] gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 items-start">
 
         {/* LEFT column */}
         <div className="space-y-5">
@@ -729,19 +729,19 @@ export default function HostTrip() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input
                 type="date"
                 value={date}
                 onChange={e => setDate(e.target.value)}
                 min={new Date().toISOString().split('T')[0]}
-                className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition w-full"
               />
               <input
                 type="time"
                 value={time}
                 onChange={e => setTime(e.target.value)}
-                className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                className="border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition w-full"
               />
             </div>
             <p className="text-xs text-gray-400 mt-1">
@@ -752,7 +752,7 @@ export default function HostTrip() {
           {/* Seats & Pricing */}
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 space-y-4">
             <h2 className="font-semibold text-gray-900 text-sm">Seats & Pricing</h2>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs text-gray-500 mb-2 block">Available Seats</label>
                 <div className="flex items-center gap-3">
