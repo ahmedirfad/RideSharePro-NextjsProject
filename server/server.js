@@ -29,6 +29,12 @@ const { verifyTransporter } = require("./config/email"); //
 
 dotenv.config();
 
+const allowedOrigins = [
+  "https://rideshareproapp.com",
+  "https://www.rideshareproapp.com",
+  "http://localhost:3000",
+];
+
 const app    = express();
 app.set("trust proxy", 1);
 const server = http.createServer(app);
@@ -36,7 +42,7 @@ const server = http.createServer(app);
 // ── Socket.io ─────────────────────────────────────────────────
 const io = new Server(server, {
   cors: {
-    origin:      process.env.CLIENT_URL || "http://localhost:3000",
+    origin: allowedOrigins,
     credentials: true,
   },
 });
@@ -49,7 +55,13 @@ app.use((req, _res, next) => { req.io = io; next(); });
 // ── Standard middleware ───────────────────────────────────────
 app.use(
   cors({
-    origin:      process.env.CLIENT_URL || "http://localhost:3000",
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
   })
 );
