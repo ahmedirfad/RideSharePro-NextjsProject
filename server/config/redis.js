@@ -1,10 +1,14 @@
 // server/config/redis.js
 const Redis = require('ioredis');
 
+const isTls = process.env.REDIS_URL && process.env.REDIS_URL.startsWith('rediss');
+
 const redisClient = new Redis(process.env.REDIS_URL, {
-  tls: {
-    rejectUnauthorized: false
-  },
+  ...(isTls && {
+    tls: {
+      rejectUnauthorized: false
+    }
+  }),
   maxRetriesPerRequest: null, // ✅ CRITICAL: BullMQ requires this
   enableReadyCheck: false,
   lazyConnect: true,
